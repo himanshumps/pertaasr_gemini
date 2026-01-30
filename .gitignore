@@ -24,7 +24,5 @@ hs_err_pid*
 replay_pid*
 **/zulu25.32.17-ca-jdk25.0.2-macosx_aarch64
 **/target
-rust/pertaasr/.idea/modules.xml
-rust/pertaasr/.idea/pertaasr.iml
-rust/pertaasr/.idea/vcs.xml
-rust/pertaasr/Cargo.lock
+**/.idea
+**/Cargo.lock
