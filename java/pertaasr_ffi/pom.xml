@@ -6,4 +6,9 @@
     <groupId>com.google.gemini</groupId>
     <artifactId>pertaasr_ffi</artifactId>
     <version>0.0.1-SNAPSHOT</version>
+    <properties>
+        <maven.compiler.source>25</maven.compiler.source>
+        <maven.compiler.target>25</maven.compiler.target>
+        <maven.compiler.release>25</maven.compiler.release>
+    </properties>
 </project>

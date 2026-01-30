@@ -6,4 +6,17 @@
     <groupId>com.google.gemini</groupId>
     <artifactId>pertaasr_supplier</artifactId>
     <version>0.0.1-SNAPSHOT</version>
+    <properties>
+        <!-- Fory requires JVM 11 or higher -->
+        <maven.compiler.source>11</maven.compiler.source>
+        <maven.compiler.target>11</maven.compiler.target>
+        <maven.compiler.release>11</maven.compiler.release>
+    </properties>
+    <dependencies>
+        <dependency>
+            <groupId>org.apache.fory</groupId>
+            <artifactId>fory-format</artifactId>
+            <version>0.14.1</version>
+        </dependency>
+    </dependencies>
 </project>
