@@ -59,11 +59,7 @@ async fn main() -> Result<(), Box<dyn Error>> {
         let java_vendor_str: String = jvm.to_rust(java_vendor_instance)?;
         println!("Java: {} {}", java_vendor_str, version_str);
     }
-
-    let resp = reqwest_client::build_request_client(VUSER_COUNT.get().unwrap().clone())
-        .get("https://httpbin.org/ip")
-        .send()
-        .await?;
+    
     println!("{:#?}", resp.bytes().await?);
     Ok(())
 }

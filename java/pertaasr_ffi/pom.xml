@@ -11,4 +11,11 @@
         <maven.compiler.target>25</maven.compiler.target>
         <maven.compiler.release>25</maven.compiler.release>
     </properties>
+    <dependencies>
+        <dependency>
+            <groupId>com.google.gemini</groupId>
+            <artifactId>pertaasr_supplier</artifactId>
+            <version>0.0.1-SNAPSHOT</version>
+        </dependency>
+    </dependencies>
 </project>
