@@ -3,7 +3,10 @@ package com.google.gemini.ffi;
 import com.google.gemini.model.ForyRequest;
 import com.google.gemini.model.PerConnectionData;
 import org.apache.fory.Fory;
+import org.apache.fory.config.CompatibleMode;
 import org.apache.fory.config.Language;
+import org.apache.fory.logging.Logger;
+import org.apache.fory.logging.LoggerFactory;
 
 import java.lang.foreign.*;
 import java.lang.invoke.MethodHandle;
@@ -17,10 +20,14 @@ import java.util.stream.Stream;
 
 
 public class UpCallMethodStub {
+    private final static Logger log = LoggerFactory.getLogger(UpCallMethodStub.class);
     @SuppressWarnings("unused")
     private static final long CALLBACK_ADDRESS_FORY_REQUEST_SUPPLIER;
     @SuppressWarnings("unused")
     private static final long CALLBACK_ADDRESS_INIT_CONNECTION;
+    @SuppressWarnings("unused")
+    public static final long CALLBACK_GET_MEMORY_SEGMENT_ADDRESS;
+    // Support max 50,000 connections per container or rust binary executing it.
     private static final List<PerConnectionData> PER_CONNECTION_DATA = Stream.<PerConnectionData>generate(() -> null).limit(50000).collect(Collectors.toCollection(ArrayList::new));
 
     static {
@@ -39,39 +46,62 @@ public class UpCallMethodStub {
             throw new RuntimeException(e);
         }
         try {
-            MethodHandle foryRequestSupplierMethodHandle = lookup.findStatic(UpCallMethodStub.class, "initConnection", voidReturnType);
-            CALLBACK_ADDRESS_INIT_CONNECTION = Linker.nativeLinker().upcallStub(foryRequestSupplierMethodHandle, voidFunctionDescriptor, Arena.global()).address();
+            MethodHandle initConnectionMethodHandle = lookup.findStatic(UpCallMethodStub.class, "initConnection", voidReturnType);
+            CALLBACK_ADDRESS_INIT_CONNECTION = Linker.nativeLinker().upcallStub(initConnectionMethodHandle, voidFunctionDescriptor, Arena.global()).address();
+        } catch (Exception e) {
+            throw new RuntimeException(e);
+        }
+        try {
+            MethodHandle memorySegmentAddressMethodHandle = lookup.findStatic(UpCallMethodStub.class, "memorySegmentAddress", longReturnType);
+            CALLBACK_GET_MEMORY_SEGMENT_ADDRESS = Linker.nativeLinker().upcallStub(memorySegmentAddressMethodHandle, longFunctionDescriptor, Arena.global()).address();
         } catch (Exception e) {
             throw new RuntimeException(e);
         }
     }
 
-    public static void foryRequestSupplier(int connectionNumber) {
-        PerConnectionData perConnectionData = PER_CONNECTION_DATA.get(connectionNumber);
-        Fory fory = perConnectionData.getFory();
-        MemorySegment memorySegment = perConnectionData.getMemorySegment();
+    @SuppressWarnings("unused")
+    public static long getMethodHandleForInitConnection() {
+        return CALLBACK_ADDRESS_INIT_CONNECTION;
+    }
+
+    @SuppressWarnings("unused")
+    public static long getMethodHandleForForyRequestSupplier() {
+        return CALLBACK_ADDRESS_FORY_REQUEST_SUPPLIER;
+    }
+
+    @SuppressWarnings("unused")
+    public static long getMethodHandleForMemorySegmentAddress() {
+        return CALLBACK_GET_MEMORY_SEGMENT_ADDRESS;
+    }
+
+    public static void foryRequestSupplier(final int connectionNumber) {
+        log.info("Inside the fory request supplier method for connection: {}", connectionNumber);
+        final PerConnectionData perConnectionData = PER_CONNECTION_DATA.get(connectionNumber);
         try {
-            byte[] bytes = fory.serialize(new ForyRequest("default", "http://test.com/", "test.com", 80, "GET", "/", new int[]{200}, 1000L, true, Map.of("test", "value"), Map.of("test", "value"), ""));
+            byte[] bytes = perConnectionData.getFory().serialize(new ForyRequest("default", "http://test.com/", "test.com", 80, "GET", "/", new int[]{200}, 1000L, true, Map.of("test", "value"), Map.of("test", "value"), ""));
             final int length = bytes.length;
             // First 4 bytes are reserved for message size so that rust knows how many bytes to read
-            memorySegment.set(ValueLayout.JAVA_INT, 0, length);
-            MemorySegment.copy(bytes, 0, memorySegment, ValueLayout.JAVA_BYTE, 4, length);
+            perConnectionData.getMemorySegment().set(ValueLayout.JAVA_INT, 0, length);
+            // This will throw exception if the memory segment is smaller than the whole thing
+            MemorySegment.copy(bytes, 0, perConnectionData.getMemorySegment(), ValueLayout.JAVA_BYTE, 4, length);
         } catch(Exception e) {
             throw new RuntimeException(e);
         }
     }
 
     public static void initConnection(int connectionNumber) {
+        log.info("Inside the init connection method for connectionNumber: {}", connectionNumber);
         PerConnectionData perConnectionData = new PerConnectionData();
-        Arena arena = Arena.ofShared();
-        MemorySegment memorySegment = arena.allocate(Integer.parseInt(System.getenv().getOrDefault("SEGMENT_SIZE_IN_BYTES", "10240")));
-        Fory fory = Fory.builder()
-                .withLanguage(Language.RUST) // As we will be sending it to rust, better to serialize in rust format
+        final Arena arena = Arena.ofShared();
+        final MemorySegment memorySegment = arena.allocate(Integer.parseInt(System.getenv().getOrDefault("SEGMENT_SIZE_IN_BYTES", "10240")));
+        final Fory fory = Fory.builder()
+                .withLanguage(Language.XLANG) // As we will be sending it to rust, better to serialize in rust format
+                .withCompatibleMode(CompatibleMode.COMPATIBLE)
                 .withAsyncCompilation(true)
                 .requireClassRegistration(true)
                 .build();
         fory.register(ForyRequest.class, "com.google.gemini", "fory_request");
-        // Warn up fory
+        // Warm up fory. It is ok if we take some time to warm up the JVM as the test has not started yet
         for (int i = 0; i < 1000; i++) {
             fory.serialize(new ForyRequest("default", "http://test.com/", "test.com", 80, "GET", "/", new int[]{200}, 1000L, true, Map.of("test", "value"), Map.of("test", "value"), "empty body"));
         }
@@ -80,5 +110,9 @@ public class UpCallMethodStub {
         perConnectionData.setMemorySegment(memorySegment);
         perConnectionData.setFory(fory);
         PER_CONNECTION_DATA.add(connectionNumber, perConnectionData);
+    }
+
+    public static long memorySegmentAddress(int connectionNumber) {
+        return PER_CONNECTION_DATA.get(connectionNumber).getMemorySegment().address();
     }
 }

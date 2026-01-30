@@ -9,3 +9,7 @@ tokio = { version = "1", features = ["full"] }
 j4rs = { version = "0" }
 humantime = "2.3.0"
 flatbuffers = "25.12"
+sync-ptr = { version = "0.2", features = ["fnptr"] }
+anyhow = "1.0.100"
+fory = "0.14.1"
+fory-core = "0.14.1"
