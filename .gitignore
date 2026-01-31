@@ -26,3 +26,4 @@ replay_pid*
 **/target
 **/.idea
 **/Cargo.lock
+rust_hello_world_server/.DS_Store
