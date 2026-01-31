@@ -7,3 +7,9 @@ To build the docker image, run this command
 ```bash
 docker build --platform=linux/amd64 --progress=plain -t rust-hello-rest .
 ```
+
+To run the server
+
+```bash
+docker run --platform=linux/amd64 -d -p 8085:8080 --name=rust-server rust-hello-rest
+```

@@ -1,16 +1,16 @@
 # Stage 1: Build the application
-FROM rust:alpine AS builder
-RUN apk add --no-cache musl-dev
+FROM rust:1-slim-trixie AS builder
 WORKDIR /usr/src/app
 COPY Cargo.toml ./
 RUN mkdir src && echo "fn main() {}" > src/main.rs
-RUN cargo build --release --target x86_64-unknown-linux-musl
+RUN cargo build --release
 COPY ./src ./src
-RUN cargo build --release --target x86_64-unknown-linux-musl
+ENV RUST_BACKTRACE=1
+RUN cargo build --release
 
-# Stage 2: Create a minimal production image
-FROM alpine:latest
+FROM debian:trixie-slim
+USER 1001
 WORKDIR /usr/src/app
-COPY --from=builder /usr/src/app/target/x86_64-unknown-linux-musl/release/rust_rest_server ./rust_rest_server
-EXPOSE 8080
-CMD ["./rust_rest_server"]
+USER 1001
+COPY --chown=1001:1001 --chmod=0755 --from=builder /usr/src/app/target/release/rust_rest_server /usr/src/app/target/release/rust_rest_server
+CMD ["./target/release/rust_rest_server"]
