@@ -15,7 +15,7 @@ async fn main() -> std::io::Result<()> {
         App::new()
             .service(index) // Register the `index` handler function
     })
-    .bind(("127.0.0.1", 8080))? // Bind the server to localhost:8080
+    .bind(("0.0.0.0", 8080))? // Bind the server to localhost:8080
     .run() // Start the server
     .await // Wait for the server to stop
 }
