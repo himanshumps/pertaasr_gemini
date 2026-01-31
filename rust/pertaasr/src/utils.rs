@@ -1,6 +1,7 @@
 use std::collections::HashMap;
 use std::env;
 use fory::Fory;
+use reqwest::Method;
 use crate::structs::ForyRequest;
 
 /// Helper function to reduce boilerplate.
@@ -33,4 +34,19 @@ pub fn init_fory() -> anyhow::Result<Fory> {
         let _: ForyRequest = fory.deserialize(&_warm_up_fory)?;
     }
     Ok(fory)
+}
+
+pub fn reqwest_method(method_name: String) -> reqwest::Method {
+    match(method_name) {
+        ref m if m.eq_ignore_ascii_case("GET") => reqwest::Method::GET,
+        ref m if m.eq_ignore_ascii_case("POST") => reqwest::Method::POST,
+        ref m if m.eq_ignore_ascii_case("PUT") => reqwest::Method::PUT,
+        ref m if m.eq_ignore_ascii_case("DELETE") => reqwest::Method::DELETE,
+        ref m if m.eq_ignore_ascii_case("PATCH") => reqwest::Method::PATCH,
+        ref m if m.eq_ignore_ascii_case("HEAD") => reqwest::Method::HEAD,
+        ref m if m.eq_ignore_ascii_case("OPTIONS") => reqwest::Method::OPTIONS,
+        ref m if m.eq_ignore_ascii_case("TRACE") => reqwest::Method::TRACE,
+        ref m if m.eq_ignore_ascii_case("CONNECT") => reqwest::Method::CONNECT,
+        _ => reqwest::Method::GET,
+    }
 }

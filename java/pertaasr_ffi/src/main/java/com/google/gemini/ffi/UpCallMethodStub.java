@@ -32,10 +32,8 @@ public class UpCallMethodStub {
 
     static {
         MethodHandles.Lookup lookup = MethodHandles.lookup();
-        @SuppressWarnings("unused")
         MethodType longReturnType = MethodType.methodType(long.class, int.class);
         MethodType voidReturnType = MethodType.methodType(void.class, int.class);
-        @SuppressWarnings("unused")
         FunctionDescriptor longFunctionDescriptor = FunctionDescriptor.of(ValueLayout.JAVA_LONG, ValueLayout.JAVA_INT);
         FunctionDescriptor voidFunctionDescriptor = FunctionDescriptor.ofVoid(ValueLayout.JAVA_INT);
         // This method handle is to get the address where rust can call java to get the next request
@@ -74,12 +72,27 @@ public class UpCallMethodStub {
         return CALLBACK_GET_MEMORY_SEGMENT_ADDRESS;
     }
 
+    /**
+     * Gives the address of the shared arena memory segment for the connection number
+     * @param connectionNumber The connection number of the thread
+     * @return The shared arena memory address
+     */
+    public static long memorySegmentAddress(int connectionNumber) {
+        return PER_CONNECTION_DATA.get(connectionNumber).getMemorySegment().address();
+    }
+
+    /**
+     * The ForyRequest supplier which serializes the ForyRequest object
+     * and writes it in shared arena with first 4 bytes in the litten endian way having the length of the byte[]
+     * @param connectionNumber The connection number of the thread
+     */
     public static void foryRequestSupplier(final int connectionNumber) {
-        log.info("Inside the fory request supplier method for connection: {}", connectionNumber);
+        //log.info("Inside the fory request supplier method for connection: {}", connectionNumber);
         final PerConnectionData perConnectionData = PER_CONNECTION_DATA.get(connectionNumber);
         try {
-            byte[] bytes = perConnectionData.getFory().serialize(new ForyRequest("default", "http://test.com/", "test.com", 80, "GET", "/", new int[]{200}, 1000L, true, Map.of("test", "value"), Map.of("test", "value"), ""));
+            byte[] bytes = perConnectionData.getFory().serialize(new ForyRequest("default", "https://jsonplaceholder.typicode.com/todos/1", "jsonplaceholder.typicode.com", 443, "GET", "/todos/1", new int[]{200}, 1000L, true, null, null, ""));
             final int length = bytes.length;
+            //log.info("Byte length from Java: {}", length);
             // First 4 bytes are reserved for message size so that rust knows how many bytes to read
             perConnectionData.getMemorySegment().set(ValueLayout.JAVA_INT, 0, length);
             // This will throw exception if the memory segment is smaller than the whole thing
@@ -89,6 +102,10 @@ public class UpCallMethodStub {
         }
     }
 
+    /**
+     * Initializes the arena, memory segment and fory for the connection thread number.
+     * @param connectionNumber The connection number of the thread
+     */
     public static void initConnection(int connectionNumber) {
         log.info("Inside the init connection method for connectionNumber: {}", connectionNumber);
         PerConnectionData perConnectionData = new PerConnectionData();
@@ -109,10 +126,6 @@ public class UpCallMethodStub {
         perConnectionData.setArena(arena);
         perConnectionData.setMemorySegment(memorySegment);
         perConnectionData.setFory(fory);
-        PER_CONNECTION_DATA.add(connectionNumber, perConnectionData);
-    }
-
-    public static long memorySegmentAddress(int connectionNumber) {
-        return PER_CONNECTION_DATA.get(connectionNumber).getMemorySegment().address();
+        PER_CONNECTION_DATA.set(connectionNumber, perConnectionData);
     }
 }
