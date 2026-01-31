@@ -11,7 +11,6 @@ use crate::utils::{get_env, init_fory, reqwest_method};
 use anyhow::Result;
 use humantime::format_duration;
 use j4rs::{ClasspathEntry, InvocationArg, JavaOpt, JvmBuilder};
-use std::cell::OnceCell;
 use std::env;
 use std::error::Error;
 use std::path::PathBuf;
@@ -45,7 +44,7 @@ async fn main() -> Result<(), Box<dyn Error>> {
         "Total number of users for which test will be running: {}",
         CONNECTION_COUNT.get().unwrap()
     );
-    RUN_DURATION.get_or_init(|| get_env("RUN_DURATION", "10").parse::<u64>().unwrap());
+    RUN_DURATION.get_or_init(|| get_env("RUN_DURATION", "120").parse::<u64>().unwrap());
     println!(
         "The duration for which the test will be running: {}",
         format_duration(Duration::from_secs(RUN_DURATION.get().unwrap().clone()))
