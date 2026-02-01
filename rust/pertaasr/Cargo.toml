@@ -15,6 +15,7 @@ core_affinity = "0"
 hickory-resolver = { version = "0", features = ["tokio-runtime", "system-config"] }
 futures-core = "0.3.31"
 tower-service = "0.3.3"
+tikv-jemallocator = { version = "0.6.1", features = ["override_allocator_on_supported_platforms", "unprefixed_malloc_on_supported_platforms"] }
 [profile.release]
 opt-level = 3
 lto = "fat"

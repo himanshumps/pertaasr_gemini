@@ -18,7 +18,12 @@ use hyper_util::client::legacy::connect::dns::Name;
 // Removed MiMalloc to stop "Illegal Instruction"
 // #[global_allocator]
 // static GLOBAL: MiMalloc = MiMalloc;
+#[cfg(not(target_env = "msvc"))]
+use tikv_jemallocator::Jemalloc;
 
+#[cfg(not(target_env = "msvc"))]
+#[global_allocator]
+static GLOBAL: Jemalloc = Jemalloc;
 #[derive(Clone)]
 struct HickoryResolver(TokioAsyncResolver);
 
