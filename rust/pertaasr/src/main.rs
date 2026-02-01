@@ -3,10 +3,12 @@ use bytes::Bytes;
 use http_body_util::{BodyExt, Empty};
 use hyper::client::conn::http1;
 use hyper::{http, Request};
-use hyper_util::rt::TokioIo;
+use hyper_util::rt::{TokioExecutor, TokioIo};
 use quanta::Clock;
 use std::sync::Arc;
 use std::time::Duration;
+use hyper_util::client::legacy::Client;
+use hyper_util::client::legacy::connect::HttpConnector;
 use tokio::net::TcpStream;
 use tokio::sync::Barrier;
 use tokio_util::sync::CancellationToken;
@@ -68,32 +70,38 @@ fn main() {
 
                     conn_handles.push(tokio::spawn(async move {
                         let target = "rust-server.himanshumps-1-dev.svc.cluster.local:8080";
-                        let host = "rust-server.himanshumps-1-dev.svc.cluster.local";
 
-                        let stream = match tokio::time::timeout(Duration::from_secs(10), TcpStream::connect(target)).await {
-                            Ok(Ok(s)) => s,
-                            _ => panic!("Connection failed for {}", target),
-                        };
-
+                        // 1. Establish raw connection once per task
+                        let stream = TcpStream::connect(target).await.expect("Connect failed");
                         stream.set_nodelay(true).ok();
-                        let (mut sender, conn) = http1::handshake(TokioIo::new(stream)).await.unwrap();
-                        tokio::spawn(async move { let _ = conn.await; });
+                        // 2. Perform raw handshake
+                        let (mut sender, conn) = http1::Builder::new()
+                            .allow_obsolete_multiline_headers_in_responses(true)
+                            .allow_spaces_after_header_name_in_responses(true)
+                            .ignore_invalid_headers_in_responses(true)
+                            .writev(true) // Reduce syscalls
+                            .handshake(TokioIo::new(stream))
+                            .await
+                            .unwrap();
+
+                        // 3. Drive the connection on the local executor
+                        tokio::spawn(async move {
+                            if let Err(e) = conn.await { /* handle/ignore */ }
+                        });
+
+                        b.wait().await;
 
                         let req_template = Request::builder()
-                            .version(http::Version::HTTP_11)
                             .uri("/")
-                            .header("Host", host)
+                            .header("Host", "rust-server.himanshumps-1-dev.svc.cluster.local")
                             .header("Connection", "keep-alive")
                             .body(Empty::<Bytes>::new())
                             .unwrap();
 
-                        // Sync all 20 connections
-                        b.wait().await;
-
                         let mut local_count = 0u64;
-                        // CHEAPEST POSSIBLE LOOP: No clock reads inside.
                         while !t.is_cancelled() {
                             let req = req_template.clone();
+                            // send_request on a raw handshake sender is faster than legacy client
                             if let Ok(resp) = sender.send_request(req).await {
                                 let mut body = resp.into_body();
                                 while let Some(Ok(frame)) = body.frame().await {
