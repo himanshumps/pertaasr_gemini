@@ -1,0 +1,21 @@
+apiVersion: batch/v1
+kind: Job
+metadata:
+  name: pertaasr-job
+spec:
+  completions: 1
+  parallelism: 1
+  template:
+    spec:
+      containers:
+        - name: wrk-container
+          image: ghcr.io/himanshumps/pertaasr:latest
+          resources:
+            limits:
+              cpu: "2"
+              memory: "4Gi"
+            requests:
+              # It is best practice to set requests as well
+              cpu: "2"
+              memory: "4Gi"
+      restartPolicy: OnFailure
