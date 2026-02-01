@@ -19,11 +19,13 @@ use hyper_util::client::legacy::connect::dns::Name;
 #[global_allocator]
 static GLOBAL: MiMalloc = MiMalloc;
 
+// --- DNS RESOLVER SHIM ---
+// Bridge Hickory (IpAddr) to Hyper (SocketAddr)
 #[derive(Clone)]
 struct HickoryResolver(TokioAsyncResolver);
 
 impl Service<Name> for HickoryResolver {
-    type Response = std::vec::IntoIter<SocketAddr>; // MUST be SocketAddr
+    type Response = std::vec::IntoIter<SocketAddr>;
     type Error = std::io::Error;
     type Future = Pin<Box<dyn Future<Output = Result<Self::Response, Self::Error>> + Send>>;
 
@@ -39,7 +41,7 @@ impl Service<Name> for HickoryResolver {
                 .await
                 .map_err(|e| std::io::Error::new(std::io::ErrorKind::Other, e))?;
 
-            // Map IpAddr to SocketAddr with port 0 as required by hyper's Resolve trait
+            // Map to SocketAddr with port 0 (Hyper fills actual port later)
             let addrs: Vec<SocketAddr> = lookup
                 .into_iter()
                 .map(|ip| SocketAddr::new(ip, 0))
@@ -50,7 +52,6 @@ impl Service<Name> for HickoryResolver {
 }
 
 fn main() {
-    println!("Starting the test using hyper, async dns and tokio runtime along with code-affinity");
     let core_ids = core_affinity::get_core_ids().unwrap_or_default();
     let num_cores = core_ids.len().max(1);
     let total_conns = 20;
@@ -76,7 +77,14 @@ fn main() {
                 .unwrap();
 
             rt.block_on(async move {
-                let resolver = TokioAsyncResolver::tokio_from_system_conf().unwrap();
+                // Read system conf properly for .svc.cluster.local support
+                let (config, mut opts) = hickory_resolver::system_conf::read_system_conf()
+                    .expect("Failed to read resolv.conf");
+
+                // Kubernetes typically uses ndots:5
+                opts.ndots = 5;
+                let resolver = TokioAsyncResolver::tokio(config, opts);
+
                 let mut connector = HttpConnector::new_with_resolver(HickoryResolver(resolver));
                 connector.set_nodelay(true);
                 connector.enforce_http(true);
@@ -107,9 +115,9 @@ fn main() {
                                 .header("Host", "rust-server.himanshumps-1-dev.svc.cluster.local")
                                 .body(Empty::<Bytes>::new())
                                 .unwrap();
-
+                            println!("Sending request");
                             if let Ok(resp) = client.request(req).await {
-                                // Explicitly consume the incoming body to fix inference
+                                println!("Response code: {}", resp.status().as_u16());
                                 let mut body = resp.into_body();
                                 while let Some(frame_res) = body.frame().await {
                                     if let Ok(frame) = frame_res {
