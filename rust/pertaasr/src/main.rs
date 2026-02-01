@@ -19,8 +19,6 @@ use hyper_util::client::legacy::connect::dns::Name;
 #[global_allocator]
 static GLOBAL: MiMalloc = MiMalloc;
 
-// --- DNS RESOLVER SHIM ---
-// Bridge Hickory (IpAddr) to Hyper (SocketAddr)
 #[derive(Clone)]
 struct HickoryResolver(TokioAsyncResolver);
 
@@ -28,126 +26,122 @@ impl Service<Name> for HickoryResolver {
     type Response = std::vec::IntoIter<SocketAddr>;
     type Error = std::io::Error;
     type Future = Pin<Box<dyn Future<Output = Result<Self::Response, Self::Error>> + Send>>;
-
-    fn poll_ready(&mut self, _cx: &mut std::task::Context<'_>) -> std::task::Poll<Result<(), Self::Error>> {
+    fn poll_ready(&mut self, _: &mut std::task::Context<'_>) -> std::task::Poll<Result<(), Self::Error>> {
         std::task::Poll::Ready(Ok(()))
     }
-
     fn call(&mut self, name: Name) -> Self::Future {
         let resolver = self.0.clone();
         Box::pin(async move {
-            let lookup = resolver
-                .lookup_ip(name.as_str())
-                .await
+            let lookup = resolver.lookup_ip(name.as_str()).await
                 .map_err(|e| std::io::Error::new(std::io::ErrorKind::Other, e))?;
-
-            // Map to SocketAddr with port 0 (Hyper fills actual port later)
-            let addrs: Vec<SocketAddr> = lookup
-                .into_iter()
-                .map(|ip| SocketAddr::new(ip, 0))
-                .collect();
+            let addrs: Vec<SocketAddr> = lookup.into_iter().map(|ip| SocketAddr::new(ip, 0)).collect();
             Ok(addrs.into_iter())
         })
     }
 }
 
 fn main() {
-    println!("Starting the test");
+    println!("[Main] Starting benchmark setup...");
     let core_ids = core_affinity::get_core_ids().unwrap_or_default();
     let num_cores = core_ids.len().max(1);
     let total_conns = 20;
-    let conns_per_core = total_conns / num_cores;
+
+    println!("[Main] Detected {} cores. Total connections to spawn: {}", num_cores, total_conns);
 
     let barrier = Arc::new(Barrier::new(total_conns));
     let clock = Clock::new();
     let duration = Duration::from_secs(120);
     let start_time = clock.now();
-
     let mut thread_handles = vec![];
+    let mut tasks_spawned = 0;
 
-    for core_id in core_ids {
+    for (i, core_id) in core_ids.iter().enumerate() {
         let b = Arc::clone(&barrier);
         let c = clock.clone();
 
+        let tasks_on_this_thread = if i == num_cores - 1 {
+            total_conns - tasks_spawned
+        } else {
+            total_conns / num_cores
+        };
+        tasks_spawned += tasks_on_this_thread;
+        let cid = *core_id;
+
         thread_handles.push(std::thread::spawn(move || {
-            core_affinity::set_for_current(core_id);
-            println!("tokio::runtime::Builder::new_current_thread");
-            let rt = tokio::runtime::Builder::new_current_thread()
-                .enable_all()
-                .build()
-                .unwrap();
+            core_affinity::set_for_current(cid);
+            let rt = tokio::runtime::Builder::new_current_thread().enable_all().build().unwrap();
 
             rt.block_on(async move {
-                println!("hickory_resolver::system_conf::read_system_conf");
-                // Read system conf properly for .svc.cluster.local support
-                let (config, mut opts) = hickory_resolver::system_conf::read_system_conf()
-                    .expect("Failed to read resolv.conf");
-
-                // Kubernetes typically uses ndots:5
+                println!("[Core {:?}] Initializing Resolver and Client...", cid);
+                let (config, mut opts) = hickory_resolver::system_conf::read_system_conf().unwrap();
                 opts.ndots = 5;
-                println!("TokioAsyncResolver::tokio");
                 let resolver = TokioAsyncResolver::tokio(config, opts);
-                println!("After TokioAsyncResolver::tokio");
                 let mut connector = HttpConnector::new_with_resolver(HickoryResolver(resolver));
                 connector.set_nodelay(true);
                 connector.enforce_http(true);
-                println!("Creating client");
-                let client = Arc::new(
-                    Client::builder(TokioExecutor::new())
-                        .pool_max_idle_per_host(total_conns)
-                        .pool_idle_timeout(None)
-                        .build::<_, Empty<Bytes>>(connector),
-                );
-                println!("After creating client");
-                let mut conn_handles = vec![];
 
-                for _ in 0..conns_per_core {
+                let client = Arc::new(Client::builder(TokioExecutor::new())
+                    .pool_max_idle_per_host(total_conns)
+                    .pool_idle_timeout(None)
+                    .build::<_, Empty<Bytes>>(connector));
+
+                let mut conn_handles = vec![];
+                for t_idx in 0..tasks_on_this_thread {
                     let b = Arc::clone(&b);
                     let c = c.clone();
                     let client = Arc::clone(&client);
 
                     conn_handles.push(tokio::spawn(async move {
                         let url: hyper::Uri = "http://rust-server.himanshumps-1-dev.svc.cluster.local:8080/".parse().unwrap();
-                        let mut local_count = 0u64;
+                        let mut count = 0u64;
 
+                        // Debugging the Barrier
+                        println!("[Task] Core {:?} Task {} waiting at barrier...", cid, t_idx);
                         b.wait().await;
 
+                        if count == 0 && cid.id == 0 {
+                            println!("[Task] Barrier released! Starting request loop...");
+                        }
+
                         while c.now() - start_time < duration {
-                            println!("Creating request");
                             let req = Request::builder()
                                 .uri(&url)
                                 .header("Host", "rust-server.himanshumps-1-dev.svc.cluster.local")
                                 .body(Empty::<Bytes>::new())
                                 .unwrap();
-                            println!("Sending request");
-                            if let Ok(resp) = client.request(req).await {
-                                println!("Response code: {}", resp.status().as_u16());
-                                let mut body = resp.into_body();
-                                while let Some(frame_res) = body.frame().await {
-                                    if let Ok(frame) = frame_res {
+
+                            match client.request(req).await {
+                                Ok(resp) => {
+                                    let mut body = resp.into_body();
+                                    while let Some(Ok(frame)) = body.frame().await {
                                         std::mem::drop(frame);
                                     }
+                                    count += 1;
                                 }
-                                local_count += 1;
+                                Err(e) => {
+                                    // Only print error once to avoid flooding
+                                    if count == 0 {
+                                        println!("[Error] Request failed: {:?}", e);
+                                    }
+                                }
                             }
                         }
-                        local_count
+                        count
                     }));
                 }
-
-                let mut core_total = 0;
-                for h in conn_handles {
-                    core_total += h.await.unwrap_or(0);
-                }
-                core_total
+                let mut total = 0;
+                for h in conn_handles { total += h.await.unwrap_or(0); }
+                total
             })
         }));
     }
 
+    println!("[Main] All threads spawned. Waiting for benchmark to complete (120s)...");
     let total_requests: u64 = thread_handles.into_iter().map(|h| h.join().unwrap()).sum();
     let total_elapsed = clock.now() - start_time;
 
-    println!("--- Benchmark Results ---");
+    println!("\n--- Benchmark Results ---");
     println!("Total Requests: {}", total_requests);
+    println!("Actual Duration: {:.2?}", total_elapsed);
     println!("Requests/sec:   {:.2}", total_requests as f64 / total_elapsed.as_secs_f64());
 }
