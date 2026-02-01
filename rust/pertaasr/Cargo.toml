@@ -19,3 +19,4 @@ tikv-jemallocator = { version = "0.6.1", features = ["override_allocator_on_supp
 [profile.release]
 opt-level = 3
 lto = "fat"
+codegen-units = 1

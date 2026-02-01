@@ -82,20 +82,20 @@ fn main() {
 
                         // SYNC POINT
                         b.wait().await;
-
+                        let target_url: hyper::Uri = "/".parse().unwrap();
+                        let req_template = Request::builder()
+                            .uri(target_url)
+                            .header("Host", host)
+                            .header("Connection", "keep-alive")
+                            .body(Empty::<Bytes>::new())
+                            .unwrap();
                         let mut local_count = 0u64;
                         while c.now() - start_time < duration {
-                            let req = Request::builder()
-                                .uri("/")
-                                .header("Host", host)
-                                .header("Connection", "keep-alive")
-                                .body(Empty::<Bytes>::new())
-                                .unwrap();
-
+                            let req = req_template.clone();
                             if let Ok(resp) = sender.send_request(req).await {
                                 let mut body = resp.into_body();
                                 while let Some(Ok(frame)) = body.frame().await {
-                                    std::mem::drop(frame);
+                                    drop(frame);
                                 }
                                 local_count += 1;
                             } else {
