@@ -20,7 +20,7 @@ import java.util.stream.Stream;
 
 
 public class UpCallMethodStub {
-    private final static Logger log = LoggerFactory.getLogger(UpCallMethodStub.class);
+    private final static Logger log;
     @SuppressWarnings("unused")
     private static final long CALLBACK_ADDRESS_FORY_REQUEST_SUPPLIER;
     @SuppressWarnings("unused")
@@ -29,8 +29,10 @@ public class UpCallMethodStub {
     public static final long CALLBACK_GET_MEMORY_SEGMENT_ADDRESS;
     // Support max 50,000 connections per container or rust binary executing it.
     private static final List<PerConnectionData> PER_CONNECTION_DATA = Stream.<PerConnectionData>generate(() -> null).limit(50000).collect(Collectors.toCollection(ArrayList::new));
+    private static final List<ForyRequest> FORY_REQUEST_LIST = Stream.<ForyRequest>generate(() -> null).limit(50000).collect(Collectors.toCollection(ArrayList::new));
 
     static {
+        log = LoggerFactory.getLogger(UpCallMethodStub.class);
         MethodHandles.Lookup lookup = MethodHandles.lookup();
         MethodType longReturnType = MethodType.methodType(long.class, int.class);
         MethodType voidReturnType = MethodType.methodType(void.class, int.class);
@@ -41,18 +43,21 @@ public class UpCallMethodStub {
             MethodHandle foryRequestSupplierMethodHandle = lookup.findStatic(UpCallMethodStub.class, "foryRequestSupplier", voidReturnType);
             CALLBACK_ADDRESS_FORY_REQUEST_SUPPLIER = Linker.nativeLinker().upcallStub(foryRequestSupplierMethodHandle, voidFunctionDescriptor, Arena.global()).address();
         } catch (Exception e) {
+            log.error("Issue while executing CALLBACK_ADDRESS_FORY_REQUEST_SUPPLIER", e);
             throw new RuntimeException(e);
         }
         try {
             MethodHandle initConnectionMethodHandle = lookup.findStatic(UpCallMethodStub.class, "initConnection", voidReturnType);
             CALLBACK_ADDRESS_INIT_CONNECTION = Linker.nativeLinker().upcallStub(initConnectionMethodHandle, voidFunctionDescriptor, Arena.global()).address();
         } catch (Exception e) {
+            log.error("Issue while executing CALLBACK_ADDRESS_INIT_CONNECTION", e);
             throw new RuntimeException(e);
         }
         try {
             MethodHandle memorySegmentAddressMethodHandle = lookup.findStatic(UpCallMethodStub.class, "memorySegmentAddress", longReturnType);
             CALLBACK_GET_MEMORY_SEGMENT_ADDRESS = Linker.nativeLinker().upcallStub(memorySegmentAddressMethodHandle, longFunctionDescriptor, Arena.global()).address();
         } catch (Exception e) {
+            log.error("Issue while executing CALLBACK_GET_MEMORY_SEGMENT_ADDRESS", e);
             throw new RuntimeException(e);
         }
     }
@@ -74,6 +79,7 @@ public class UpCallMethodStub {
 
     /**
      * Gives the address of the shared arena memory segment for the connection number
+     *
      * @param connectionNumber The connection number of the thread
      * @return The shared arena memory address
      */
@@ -84,26 +90,31 @@ public class UpCallMethodStub {
     /**
      * The ForyRequest supplier which serializes the ForyRequest object
      * and writes it in shared arena with first 4 bytes in the litten endian way having the length of the byte[]
+     *
      * @param connectionNumber The connection number of the thread
      */
     public static void foryRequestSupplier(final int connectionNumber) {
         //log.info("Inside the fory request supplier method for connection: {}", connectionNumber);
         final PerConnectionData perConnectionData = PER_CONNECTION_DATA.get(connectionNumber);
         try {
-            byte[] bytes = perConnectionData.getFory().serialize(new ForyRequest("default", "https://jsonplaceholder.typicode.com/todos/1", "jsonplaceholder.typicode.com", 443, "GET", "/todos/1", new int[]{200}, 1000L, true, null, null, ""));
-            final int length = bytes.length;
-            //log.info("Byte length from Java: {}", length);
-            // First 4 bytes are reserved for message size so that rust knows how many bytes to read
-            perConnectionData.getMemorySegment().set(ValueLayout.JAVA_INT, 0, length);
-            // This will throw exception if the memory segment is smaller than the whole thing
-            MemorySegment.copy(bytes, 0, perConnectionData.getMemorySegment(), ValueLayout.JAVA_BYTE, 4, length);
-        } catch(Exception e) {
+            if (FORY_REQUEST_LIST.get(connectionNumber) == null) {
+                FORY_REQUEST_LIST.set(connectionNumber, new ForyRequest("default", "http://rust-server-ffi:8080/", "rust-server-ffi", 8080, "GET", "/", null, null, true, null, null, null));
+                byte[] bytes = perConnectionData.getFory().serialize(new ForyRequest("default", "http://rust-server-ffi:8080/", "rust-server-ffi", 8080, "GET", "/", null, null, true, null, null, null));
+                final int length = bytes.length;
+                //log.info("Byte length from Java: {}", length);
+                // First 4 bytes are reserved for message size so that rust knows how many bytes to read
+                perConnectionData.getMemorySegment().set(ValueLayout.JAVA_INT, 0, length);
+                // This will throw exception if the memory segment is smaller than the whole thing
+                MemorySegment.copy(bytes, 0, perConnectionData.getMemorySegment(), ValueLayout.JAVA_BYTE, 4, length);
+            }
+        } catch (Exception e) {
             throw new RuntimeException(e);
         }
     }
 
     /**
      * Initializes the arena, memory segment and fory for the connection thread number.
+     *
      * @param connectionNumber The connection number of the thread
      */
     public static void initConnection(int connectionNumber) {
@@ -120,7 +131,7 @@ public class UpCallMethodStub {
         fory.register(ForyRequest.class, "com.google.gemini", "fory_request");
         // Warm up fory. It is ok if we take some time to warm up the JVM as the test has not started yet
         for (int i = 0; i < 1000; i++) {
-            fory.serialize(new ForyRequest("default", "http://test.com/", "test.com", 80, "GET", "/", new int[]{200}, 1000L, true, Map.of("test", "value"), Map.of("test", "value"), "empty body"));
+            fory.serialize(new ForyRequest("default", "http://rust-server-ffi:8080/", "rust-server-ffi", 8080, "GET", "/", new int[]{200}, 1000L, true, Map.of("test", "value"), Map.of("test", "value"), "empty body"));
         }
         perConnectionData.setConnectionNumber(connectionNumber);
         perConnectionData.setArena(arena);

@@ -1,0 +1,22 @@
+apiVersion: batch/v1
+kind: Job
+metadata:
+  name: plow-job
+spec:
+  completions: 1
+  parallelism: 1
+  template:
+    spec:
+      containers:
+        - name: wrk-container
+          image: ghcr.io/six-ddc/plow
+          args: ["http://rust-server.himanshumps-1-dev.svc.cluster.local:8080/", "-c20","-d2m", "--interval=0", "--summary"]
+          resources:
+            limits:
+              cpu: "2"
+              memory: "4Gi"
+            requests:
+              # It is best practice to set requests as well
+              cpu: "2"
+              memory: "4Gi"
+      restartPolicy: OnFailure

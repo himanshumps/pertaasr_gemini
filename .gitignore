@@ -27,3 +27,9 @@ replay_pid*
 **/.idea
 **/Cargo.lock
 **/.DS_Store
+rust/pertaasr/old/constants.rs
+rust/pertaasr/old/ffi.rs
+rust/pertaasr/old/reqwest_client.rs
+rust/pertaasr/old/structs.rs
+rust/pertaasr/old/utils.rs
+rust/pertaasr/old/main.rs
