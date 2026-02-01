@@ -60,8 +60,8 @@ fn main() {
                     let t = t.clone();
 
                     conn_handles.push(tokio::spawn(async move {
-                        let target = "rust-server-ffi:8080";
-                        let host = "rust-server-ffi";
+                        let target = "rust-server.himanshumps-1-dev.svc.cluster.local:8080";
+                        let host = "rust-server.himanshumps-1-dev.svc.cluster.local";
 
                         let stream = match tokio::time::timeout(Duration::from_secs(10), TcpStream::connect(target)).await {
                             Ok(Ok(s)) => s,
