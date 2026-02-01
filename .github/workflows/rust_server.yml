@@ -71,7 +71,7 @@ jobs:
           file: "./rust_hello_world_server/Dockerfile.rust_server"
           context: "./rust_hello_world_server"
           push: ${{ github.event_name != 'pull_request' }}
-          tags: "latest"
+          tags: ${{ env.registry }}/${{ github.repository_owner }}/${{ env.image_name }}:latest
           labels: ${{ steps.meta.outputs.labels }}
           cache-from: type=gha
           cache-to: type=gha,mode=max
