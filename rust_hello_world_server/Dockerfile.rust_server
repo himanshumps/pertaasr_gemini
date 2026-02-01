@@ -12,5 +12,5 @@ FROM debian:trixie-slim
 USER 1001
 WORKDIR /usr/src/app
 USER 1001
-COPY --chown=1001:1001 --chmod=0755 --from=builder /usr/src/app/target/release/rust_rest_server /usr/src/app/target/release/rust_rest_server
+COPY --chown=1001:1001 --chmod=0777 --from=builder /usr/src/app/target/release/ /usr/src/app/target/release/
 CMD ["./target/release/rust_rest_server"]
