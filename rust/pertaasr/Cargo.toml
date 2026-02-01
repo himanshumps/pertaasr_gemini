@@ -15,4 +15,3 @@ tokio-util = { version = "0.7.18", features = ["full"] }
 [profile.release]
 opt-level = 3
 lto = "fat"
-codegen-units = 1
