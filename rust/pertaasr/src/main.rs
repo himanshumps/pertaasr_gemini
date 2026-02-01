@@ -52,6 +52,7 @@ impl Service<Name> for HickoryResolver {
 }
 
 fn main() {
+    println!("Starting the test");
     let core_ids = core_affinity::get_core_ids().unwrap_or_default();
     let num_cores = core_ids.len().max(1);
     let total_conns = 20;
@@ -70,32 +71,34 @@ fn main() {
 
         thread_handles.push(std::thread::spawn(move || {
             core_affinity::set_for_current(core_id);
-
+            println!("tokio::runtime::Builder::new_current_thread");
             let rt = tokio::runtime::Builder::new_current_thread()
                 .enable_all()
                 .build()
                 .unwrap();
 
             rt.block_on(async move {
+                println!("hickory_resolver::system_conf::read_system_conf");
                 // Read system conf properly for .svc.cluster.local support
                 let (config, mut opts) = hickory_resolver::system_conf::read_system_conf()
                     .expect("Failed to read resolv.conf");
 
                 // Kubernetes typically uses ndots:5
                 opts.ndots = 5;
+                println!("TokioAsyncResolver::tokio");
                 let resolver = TokioAsyncResolver::tokio(config, opts);
-
+                println!("After TokioAsyncResolver::tokio");
                 let mut connector = HttpConnector::new_with_resolver(HickoryResolver(resolver));
                 connector.set_nodelay(true);
                 connector.enforce_http(true);
-
+                println!("Creating client");
                 let client = Arc::new(
                     Client::builder(TokioExecutor::new())
                         .pool_max_idle_per_host(total_conns)
                         .pool_idle_timeout(None)
                         .build::<_, Empty<Bytes>>(connector),
                 );
-
+                println!("After creating client");
                 let mut conn_handles = vec![];
 
                 for _ in 0..conns_per_core {
@@ -110,6 +113,7 @@ fn main() {
                         b.wait().await;
 
                         while c.now() - start_time < duration {
+                            println!("Creating request");
                             let req = Request::builder()
                                 .uri(&url)
                                 .header("Host", "rust-server.himanshumps-1-dev.svc.cluster.local")
