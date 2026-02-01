@@ -58,7 +58,7 @@ fn main() {
                     let client = Arc::clone(&client);
 
                     conn_handles.push(tokio::spawn(async move {
-                        let url: hyper::Uri = "http://rust-server-ffi:8080/".parse().unwrap();
+                        let url: hyper::Uri = "http://rust-server.himanshumps-1-dev.svc.cluster.local:8080/".parse().unwrap();
                         let mut local_count = 0u64;
 
                         b.wait().await;
