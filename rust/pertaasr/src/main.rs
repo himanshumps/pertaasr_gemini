@@ -1,3 +1,5 @@
+use std::io;
+use std::io::Write;
 use bytes::Bytes;
 use http_body_util::{BodyExt, Empty};
 use hyper::client::conn::http1;
@@ -15,17 +17,23 @@ static GLOBAL: tikv_jemallocator::Jemalloc = tikv_jemallocator::Jemalloc;
 
 fn main() {
     println!("[Main] Starting high-perf raw handshake benchmark...");
-    let core_ids = core_affinity::get_core_ids().unwrap_or_else(|| vec![]);
+    io::stdout().flush().unwrap();
+    let core_ids = core_affinity::get_core_ids().unwrap_or_else(|| {
+        println!("[WARN] Could not detect cores, defaulting to soft-parallelism");
+        io::stdout().flush().unwrap();
+        vec![]
+    });
     let num_cores = core_ids.len().max(1);
     let total_conns = 20;
-
     let barrier = Arc::new(Barrier::new(total_conns));
     let clock = Clock::new();
     let duration = Duration::from_secs(120);
     let start_time = clock.now();
+
     let mut thread_handles = vec![];
     let mut tasks_spawned = 0;
-    println!("[Main] Starting 0..num_cores...");
+    println!("0..num_cores");
+    io::stdout().flush().unwrap();
     for i in 0..num_cores {
         let b = Arc::clone(&barrier);
         let c = clock.clone();
@@ -39,7 +47,10 @@ fn main() {
         tasks_spawned += tasks_on_this_thread;
 
         thread_handles.push(std::thread::spawn(move || {
-            if let Some(id) = core_id { core_affinity::set_for_current(id); }
+            // 2. Safer pinning: some Docker runtimes hang on set_for_current
+            if let Some(id) = core_id {
+                core_affinity::set_for_current(id);
+            }
 
             let rt = tokio::runtime::Builder::new_current_thread()
                 .enable_all()
@@ -48,7 +59,6 @@ fn main() {
 
             rt.block_on(async move {
                 let mut conn_handles = vec![];
-
                 for _ in 0..tasks_on_this_thread {
                     let b = Arc::clone(&b);
                     let c = c.clone();
@@ -56,28 +66,24 @@ fn main() {
                     conn_handles.push(tokio::spawn(async move {
                         let target = "rust-server.himanshumps-1-dev.svc.cluster.local:8080";
                         let host = "rust-server.himanshumps-1-dev.svc.cluster.local";
-                        let mut local_count = 0u64;
-                        println!("Trying connection to {}...", target);
-                        // 1. TCP Connect
-                        let stream = TcpStream::connect(target).await.expect("Connect failed");
-                        println!("Trying connection to {} succeeded...", target);
+                        println!("Connecting");
+                        io::stdout().flush().unwrap();
+                        // TCP Connect with timeout to prevent hanging
+                        let stream = tokio::time::timeout(
+                            Duration::from_secs(10),
+                            TcpStream::connect(target)
+                        ).await.expect("Connect timed out").expect("Connect failed");
+                        println!("connected");
                         stream.set_nodelay(true).ok();
 
-                        // 2. Wrap in TokioIo to satisfy hyper::rt::Read/Write
-                        let io = TokioIo::new(stream);
+                        let (mut sender, conn) = http1::handshake(TokioIo::new(stream)).await.unwrap();
 
-                        // 3. HTTP/1 Handshake
-                        let (mut sender, conn) = http1::handshake(io).await.expect("Handshake failed");
+                        tokio::spawn(async move { let _ = conn.await; });
 
-                        // 4. Drive connection
-                        tokio::spawn(async move {
-                            if let Err(err) = conn.await {
-                                // Ignore errors after test duration finishes
-                            }
-                        });
-
+                        // SYNC POINT
                         b.wait().await;
-                        println!("Starting the test...");
+
+                        let mut local_count = 0u64;
                         while c.now() - start_time < duration {
                             let req = Request::builder()
                                 .uri("/")
@@ -88,14 +94,12 @@ fn main() {
 
                             if let Ok(resp) = sender.send_request(req).await {
                                 let mut body = resp.into_body();
-                                while let Some(frame_res) = body.frame().await {
-                                    if let Ok(frame) = frame_res {
-                                        std::mem::drop(frame);
-                                    }
+                                while let Some(Ok(frame)) = body.frame().await {
+                                    std::mem::drop(frame);
                                 }
                                 local_count += 1;
                             } else {
-                                break; // Connection closed
+                                break;
                             }
                         }
                         local_count
@@ -109,10 +113,14 @@ fn main() {
         }));
     }
 
+    println!("[RUN] All threads started. Waiting 120s...");
+    io::stdout().flush().unwrap();
+
     let total_requests: u64 = thread_handles.into_iter().map(|h| h.join().unwrap()).sum();
     let total_elapsed = clock.now() - start_time;
 
-    println!("\n--- Benchmark Results ---");
-    println!("Total Requests: {}", total_requests);
-    println!("Requests/sec:   {:.2}", total_requests as f64 / total_elapsed.as_secs_f64());
+    println!("\n--- Results ---");
+    println!("Elapsed {:?}", total_elapsed);
+    println!("Count {}", total_requests);
+    println!("Requests/sec: {:.2}", total_requests as f64 / total_elapsed.as_secs_f64());
 }
