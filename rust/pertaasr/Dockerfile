@@ -6,7 +6,7 @@ ENV LANG='en_US.UTF-8'
 ENV RUST_BACKTRACE=1
 COPY Cargo.toml ./
 COPY ./src ./src
-RUN cargo build --release
+RUN RUSTFLAGS="-C target-cpu=native" cargo build --release
 
 FROM rust:1-trixie
 USER 1001
