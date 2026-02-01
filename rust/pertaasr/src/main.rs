@@ -3,17 +3,13 @@ use std::io::Write;
 use bytes::Bytes;
 use http_body_util::{BodyExt, Empty};
 use hyper::client::conn::http1;
-use hyper::Request;
+use hyper::{http, Request};
 use hyper_util::rt::TokioIo; // The fix for E0277
 use quanta::Clock;
 use std::sync::Arc;
 use std::time::Duration;
 use tokio::net::TcpStream;
 use tokio::sync::Barrier;
-
-#[cfg(not(target_env = "msvc"))]
-#[global_allocator]
-static GLOBAL: tikv_jemallocator::Jemalloc = tikv_jemallocator::Jemalloc;
 
 fn main() {
     println!("[Main] Starting high-perf raw handshake benchmark...");
@@ -84,6 +80,7 @@ fn main() {
                         b.wait().await;
                         let target_url: hyper::Uri = "/".parse().unwrap();
                         let req_template = Request::builder()
+                            .version(http::Version::HTTP_11)
                             .uri(target_url)
                             .header("Host", host)
                             .header("Connection", "keep-alive")
