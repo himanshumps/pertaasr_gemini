@@ -1,52 +1,20 @@
 use bytes::Bytes;
-use hickory_resolver::TokioAsyncResolver;
 use http_body_util::{BodyExt, Empty};
+use hyper::client::conn::http1;
 use hyper::Request;
-use hyper_util::client::legacy::connect::HttpConnector;
-use hyper_util::client::legacy::Client;
-use hyper_util::rt::TokioExecutor;
+use hyper_util::rt::TokioIo; // The fix for E0277
 use quanta::Clock;
-use std::future::Future;
-use std::net::{IpAddr, SocketAddr};
-use std::pin::Pin;
 use std::sync::Arc;
 use std::time::Duration;
+use tokio::net::TcpStream;
 use tokio::sync::Barrier;
-use tower_service::Service;
-use hyper_util::client::legacy::connect::dns::Name;
-
-// Removed MiMalloc to stop "Illegal Instruction"
-// #[global_allocator]
-// static GLOBAL: MiMalloc = MiMalloc;
-#[cfg(not(target_env = "msvc"))]
-use tikv_jemallocator::Jemalloc;
 
 #[cfg(not(target_env = "msvc"))]
 #[global_allocator]
-static GLOBAL: Jemalloc = Jemalloc;
-#[derive(Clone)]
-struct HickoryResolver(TokioAsyncResolver);
-
-impl Service<Name> for HickoryResolver {
-    type Response = std::vec::IntoIter<SocketAddr>;
-    type Error = std::io::Error;
-    type Future = Pin<Box<dyn Future<Output = Result<Self::Response, Self::Error>> + Send>>;
-    fn poll_ready(&mut self, _: &mut std::task::Context<'_>) -> std::task::Poll<Result<(), Self::Error>> {
-        std::task::Poll::Ready(Ok(()))
-    }
-    fn call(&mut self, name: Name) -> Self::Future {
-        let resolver = self.0.clone();
-        Box::pin(async move {
-            let lookup = resolver.lookup_ip(name.as_str()).await
-                .map_err(|e| std::io::Error::new(std::io::ErrorKind::Other, e))?;
-            let addrs: Vec<SocketAddr> = lookup.into_iter().map(|ip| SocketAddr::new(ip, 0)).collect();
-            Ok(addrs.into_iter())
-        })
-    }
-}
+static GLOBAL: tikv_jemallocator::Jemalloc = tikv_jemallocator::Jemalloc;
 
 fn main() {
-    println!("[Main] Starting benchmark setup...");
+    println!("[Main] Starting high-perf raw handshake benchmark...");
     let core_ids = core_affinity::get_core_ids().unwrap_or_else(|| vec![]);
     let num_cores = core_ids.len().max(1);
     let total_conns = 20;
@@ -57,8 +25,7 @@ fn main() {
     let start_time = clock.now();
     let mut thread_handles = vec![];
     let mut tasks_spawned = 0;
-
-    // Use a simpler core distribution
+    println!("[Main] Starting 0..num_cores...");
     for i in 0..num_cores {
         let b = Arc::clone(&barrier);
         let c = clock.clone();
@@ -72,9 +39,7 @@ fn main() {
         tasks_spawned += tasks_on_this_thread;
 
         thread_handles.push(std::thread::spawn(move || {
-            if let Some(id) = core_id {
-                core_affinity::set_for_current(id);
-            }
+            if let Some(id) = core_id { core_affinity::set_for_current(id); }
 
             let rt = tokio::runtime::Builder::new_current_thread()
                 .enable_all()
@@ -82,48 +47,61 @@ fn main() {
                 .unwrap();
 
             rt.block_on(async move {
-                let (config, mut opts) = hickory_resolver::system_conf::read_system_conf().expect("resolv.conf");
-                opts.ndots = 5;
-                let resolver = TokioAsyncResolver::tokio(config, opts);
-                let mut connector = HttpConnector::new_with_resolver(HickoryResolver(resolver));
-                connector.set_nodelay(true);
-                connector.enforce_http(true);
-
-                let client = Arc::new(Client::builder(TokioExecutor::new())
-                    .pool_max_idle_per_host(total_conns)
-                    .pool_idle_timeout(None)
-                    .build::<_, Empty<Bytes>>(connector));
-
                 let mut conn_handles = vec![];
+
                 for _ in 0..tasks_on_this_thread {
                     let b = Arc::clone(&b);
                     let c = c.clone();
-                    let client = Arc::clone(&client);
 
                     conn_handles.push(tokio::spawn(async move {
-                        let url: hyper::Uri = "http://rust-server.himanshumps-1-dev.svc.cluster.local:8080/".parse().unwrap();
-                        let mut count = 0u64;
+                        let target = "rust-server.himanshumps-1-dev.svc.cluster.local:8080";
+                        let host = "rust-server.himanshumps-1-dev.svc.cluster.local";
+                        let mut local_count = 0u64;
+                        println!("Trying connection to {}...", target);
+                        // 1. TCP Connect
+                        let stream = TcpStream::connect(target).await.expect("Connect failed");
+                        println!("Trying connection to {} succeeded...", target);
+                        stream.set_nodelay(true).ok();
+
+                        // 2. Wrap in TokioIo to satisfy hyper::rt::Read/Write
+                        let io = TokioIo::new(stream);
+
+                        // 3. HTTP/1 Handshake
+                        let (mut sender, conn) = http1::handshake(io).await.expect("Handshake failed");
+
+                        // 4. Drive connection
+                        tokio::spawn(async move {
+                            if let Err(err) = conn.await {
+                                // Ignore errors after test duration finishes
+                            }
+                        });
 
                         b.wait().await;
-
+                        println!("Starting the test...");
                         while c.now() - start_time < duration {
                             let req = Request::builder()
-                                .uri(&url)
-                                .header("Host", "rust-server.himanshumps-1-dev.svc.cluster.local")
+                                .uri("/")
+                                .header("Host", host)
+                                .header("Connection", "keep-alive")
                                 .body(Empty::<Bytes>::new())
                                 .unwrap();
 
-                            if let Ok(resp) = client.request(req).await {
+                            if let Ok(resp) = sender.send_request(req).await {
                                 let mut body = resp.into_body();
-                                while let Some(Ok(frame)) = body.frame().await {
-                                    std::mem::drop(frame);
+                                while let Some(frame_res) = body.frame().await {
+                                    if let Ok(frame) = frame_res {
+                                        std::mem::drop(frame);
+                                    }
                                 }
-                                count += 1;
+                                local_count += 1;
+                            } else {
+                                break; // Connection closed
                             }
                         }
-                        count
+                        local_count
                     }));
                 }
+
                 let mut total = 0;
                 for h in conn_handles { total += h.await.unwrap_or(0); }
                 total
@@ -131,7 +109,6 @@ fn main() {
         }));
     }
 
-    println!("[Main] Benchmark running for 120s...");
     let total_requests: u64 = thread_handles.into_iter().map(|h| h.join().unwrap()).sum();
     let total_elapsed = clock.now() - start_time;
 
