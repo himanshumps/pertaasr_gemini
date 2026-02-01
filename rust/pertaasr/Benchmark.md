@@ -95,5 +95,16 @@ Tools we are trying to surpass (HTTP 1.1)
 
 We will be running multiple runs to see the performance. Let's create a table with the github sha and the binary name for the test.
 
-| Github sha | Binary name | Total Requests in 2 min | Requests per second |
-|------------|-------------|-------------------------|---------------------|
+```bash
+oc project himanshumps-1-dev
+oc delete job pertaasr-job
+oc apply -f pertaasr.yaml
+```
+
+
+| Github sha                               | Binary name | Implementation Reference | Total Requests | Requests per second | 
+|------------------------------------------|-------------|--------------------------|----------------|---------------------|
+| 91106d4e24f4b4c32ef31a90d89b4399d2451bf4 | pertaasr    | Tokio + hyper            | 15564573       | 129700.89           |
+| 799d27c3668b28a184f7772d6ed7a13282de76cc | pertaasr    | Tokio + hyper + Jemalloc | 15053091       | 125438.13           |
+
+
