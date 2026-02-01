@@ -50,6 +50,7 @@ impl Service<Name> for HickoryResolver {
 }
 
 fn main() {
+    println!("Starting the test using hyper, async dns and tokio runtime along with code-affinity");
     let core_ids = core_affinity::get_core_ids().unwrap_or_default();
     let num_cores = core_ids.len().max(1);
     let total_conns = 20;
@@ -95,7 +96,7 @@ fn main() {
                     let client = Arc::clone(&client);
 
                     conn_handles.push(tokio::spawn(async move {
-                        let url: hyper::Uri = "http://rust-server.himanshumps-1-dev.svc.cluster.local".parse().unwrap();
+                        let url: hyper::Uri = "http://rust-server.himanshumps-1-dev.svc.cluster.local:8080/".parse().unwrap();
                         let mut local_count = 0u64;
 
                         b.wait().await;
