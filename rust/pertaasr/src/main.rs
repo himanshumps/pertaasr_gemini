@@ -1,22 +1,57 @@
-use std::sync::Arc;
-use std::time::Duration;
+use bytes::Bytes;
+use hickory_resolver::TokioAsyncResolver;
+use http_body_util::{BodyExt, Empty};
 use hyper::Request;
 use hyper_util::client::legacy::connect::HttpConnector;
 use hyper_util::client::legacy::Client;
 use hyper_util::rt::TokioExecutor;
-use http_body_util::{BodyExt, Empty};
-use bytes::Bytes;
+use mimalloc::MiMalloc;
 use quanta::Clock;
+use std::future::Future;
+use std::net::{IpAddr, SocketAddr};
+use std::pin::Pin;
+use std::sync::Arc;
+use std::time::Duration;
 use tokio::sync::Barrier;
+use tower_service::Service;
+use hyper_util::client::legacy::connect::dns::Name;
 
 #[global_allocator]
-static GLOBAL: mimalloc::MiMalloc = mimalloc::MiMalloc;
+static GLOBAL: MiMalloc = MiMalloc;
+
+#[derive(Clone)]
+struct HickoryResolver(TokioAsyncResolver);
+
+impl Service<Name> for HickoryResolver {
+    type Response = std::vec::IntoIter<SocketAddr>; // MUST be SocketAddr
+    type Error = std::io::Error;
+    type Future = Pin<Box<dyn Future<Output = Result<Self::Response, Self::Error>> + Send>>;
+
+    fn poll_ready(&mut self, _cx: &mut std::task::Context<'_>) -> std::task::Poll<Result<(), Self::Error>> {
+        std::task::Poll::Ready(Ok(()))
+    }
+
+    fn call(&mut self, name: Name) -> Self::Future {
+        let resolver = self.0.clone();
+        Box::pin(async move {
+            let lookup = resolver
+                .lookup_ip(name.as_str())
+                .await
+                .map_err(|e| std::io::Error::new(std::io::ErrorKind::Other, e))?;
+
+            // Map IpAddr to SocketAddr with port 0 as required by hyper's Resolve trait
+            let addrs: Vec<SocketAddr> = lookup
+                .into_iter()
+                .map(|ip| SocketAddr::new(ip, 0))
+                .collect();
+            Ok(addrs.into_iter())
+        })
+    }
+}
 
 fn main() {
-    println!("Running the test using hyper and tokio");
     let core_ids = core_affinity::get_core_ids().unwrap_or_default();
-    // Docker restricted us to 2 cores; this will capture cores 0 and 1
-    let num_cores = core_ids.len();
+    let num_cores = core_ids.len().max(1);
     let total_conns = 20;
     let conns_per_core = total_conns / num_cores;
 
@@ -40,17 +75,19 @@ fn main() {
                 .unwrap();
 
             rt.block_on(async move {
-                let mut conn_handles = vec![];
-
-                // Construct the client once per core-thread for maximum reuse
-                let mut connector = HttpConnector::new();
+                let resolver = TokioAsyncResolver::tokio_from_system_conf().unwrap();
+                let mut connector = HttpConnector::new_with_resolver(HickoryResolver(resolver));
                 connector.set_nodelay(true);
                 connector.enforce_http(true);
 
                 let client = Arc::new(
                     Client::builder(TokioExecutor::new())
-                        .build::<_, Empty<Bytes>>(connector)
+                        .pool_max_idle_per_host(total_conns)
+                        .pool_idle_timeout(None)
+                        .build::<_, Empty<Bytes>>(connector),
                 );
+
+                let mut conn_handles = vec![];
 
                 for _ in 0..conns_per_core {
                     let b = Arc::clone(&b);
@@ -58,25 +95,24 @@ fn main() {
                     let client = Arc::clone(&client);
 
                     conn_handles.push(tokio::spawn(async move {
-                        let url: hyper::Uri = "http://rust-server.himanshumps-1-dev.svc.cluster.local:8080/".parse().unwrap();
+                        let url: hyper::Uri = "http://rust-server.himanshumps-1-dev.svc.cluster.local".parse().unwrap();
                         let mut local_count = 0u64;
 
                         b.wait().await;
 
                         while c.now() - start_time < duration {
-                            // Use http_body_util::Empty to fix the "private" error
                             let req = Request::builder()
                                 .uri(&url)
-                                .header("Host", "rust-server-ffi")
+                                .header("Host", "rust-server.himanshumps-1-dev.svc.cluster.local")
                                 .body(Empty::<Bytes>::new())
                                 .unwrap();
 
-                            if let Ok(mut resp) = client.request(req).await {
-                                let body = resp.body_mut();
-                                // Efficiently stream and discard
-                                while let Some(frame) = body.frame().await {
-                                    if let Ok(f) = frame {
-                                        std::mem::drop(f);
+                            if let Ok(resp) = client.request(req).await {
+                                // Explicitly consume the incoming body to fix inference
+                                let mut body = resp.into_body();
+                                while let Some(frame_res) = body.frame().await {
+                                    if let Ok(frame) = frame_res {
+                                        std::mem::drop(frame);
                                     }
                                 }
                                 local_count += 1;
@@ -95,12 +131,10 @@ fn main() {
         }));
     }
 
-    let total_requests: u64 = thread_handles.into_iter()
-        .map(|h| h.join().unwrap_or(0))
-        .sum();
-
+    let total_requests: u64 = thread_handles.into_iter().map(|h| h.join().unwrap()).sum();
     let total_elapsed = clock.now() - start_time;
-    println!("--- Final Results ---");
+
+    println!("--- Benchmark Results ---");
     println!("Total Requests: {}", total_requests);
-    println!("Requests/sec: {:.2}", total_requests as f64 / total_elapsed.as_secs_f64());
+    println!("Requests/sec:   {:.2}", total_requests as f64 / total_elapsed.as_secs_f64());
 }
