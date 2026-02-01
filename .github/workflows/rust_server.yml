@@ -67,8 +67,8 @@ jobs:
         id: build-and-push
         uses: docker/build-push-action@0565240e2d4ab88bba5387d719585280857ece09 # v5.0.0
         with:
-          file: "{{context}}/Dockerfile.rust_server"
-          context: "{{defaultContext}}:rust_hello_world_server"
+          file: "Dockerfile.rust_server"
+          context: "rust_hello_world_server/"
           push: ${{ github.event_name != 'pull_request' }}
           tags: "latest"
           labels: ${{ steps.meta.outputs.labels }}
