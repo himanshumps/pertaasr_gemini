@@ -5,12 +5,17 @@ edition = "2024"
 
 [dependencies]
 tokio = { version = "1", features = ["full"] }
-hyper = { version = "1", features = ["client", "http1", "full"] }
-hyper-util = { version = "0.1.19", features = ["full"] }
-http-body-util = { version = "0", features = ["full"] }
+hyper = { version = "1", features = ["client", "http1"] }
+hyper-util = { version = "0", features = ["full"] }
+http-body-util = "0"
 bytes = "1"
+mimalloc = "0"
 quanta = "0"
 core_affinity = "0"
+hickory-resolver = { version = "0", features = ["tokio-runtime", "system-config"] }
+futures-core = "0.3.31"
+tower-service = "0.3.3"
+tikv-jemallocator = { version = "0.6.1", features = ["override_allocator_on_supported_platforms", "unprefixed_malloc_on_supported_platforms"] }
 [profile.release]
 opt-level = 3
 lto = "fat"
