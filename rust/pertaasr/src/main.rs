@@ -5,7 +5,6 @@ use hyper::Request;
 use hyper_util::client::legacy::connect::HttpConnector;
 use hyper_util::client::legacy::Client;
 use hyper_util::rt::TokioExecutor;
-use mimalloc::MiMalloc;
 use quanta::Clock;
 use std::future::Future;
 use std::net::{IpAddr, SocketAddr};
@@ -16,8 +15,9 @@ use tokio::sync::Barrier;
 use tower_service::Service;
 use hyper_util::client::legacy::connect::dns::Name;
 
-#[global_allocator]
-static GLOBAL: MiMalloc = MiMalloc;
+// Removed MiMalloc to stop "Illegal Instruction"
+// #[global_allocator]
+// static GLOBAL: MiMalloc = MiMalloc;
 
 #[derive(Clone)]
 struct HickoryResolver(TokioAsyncResolver);
@@ -42,11 +42,9 @@ impl Service<Name> for HickoryResolver {
 
 fn main() {
     println!("[Main] Starting benchmark setup...");
-    let core_ids = core_affinity::get_core_ids().unwrap_or_default();
+    let core_ids = core_affinity::get_core_ids().unwrap_or_else(|| vec![]);
     let num_cores = core_ids.len().max(1);
     let total_conns = 20;
-
-    println!("[Main] Detected {} cores. Total connections to spawn: {}", num_cores, total_conns);
 
     let barrier = Arc::new(Barrier::new(total_conns));
     let clock = Clock::new();
@@ -55,9 +53,11 @@ fn main() {
     let mut thread_handles = vec![];
     let mut tasks_spawned = 0;
 
-    for (i, core_id) in core_ids.iter().enumerate() {
+    // Use a simpler core distribution
+    for i in 0..num_cores {
         let b = Arc::clone(&barrier);
         let c = clock.clone();
+        let core_id = core_ids.get(i).cloned();
 
         let tasks_on_this_thread = if i == num_cores - 1 {
             total_conns - tasks_spawned
@@ -65,15 +65,19 @@ fn main() {
             total_conns / num_cores
         };
         tasks_spawned += tasks_on_this_thread;
-        let cid = *core_id;
 
         thread_handles.push(std::thread::spawn(move || {
-            core_affinity::set_for_current(cid);
-            let rt = tokio::runtime::Builder::new_current_thread().enable_all().build().unwrap();
+            if let Some(id) = core_id {
+                core_affinity::set_for_current(id);
+            }
+
+            let rt = tokio::runtime::Builder::new_current_thread()
+                .enable_all()
+                .build()
+                .unwrap();
 
             rt.block_on(async move {
-                println!("[Core {:?}] Initializing Resolver and Client...", cid);
-                let (config, mut opts) = hickory_resolver::system_conf::read_system_conf().unwrap();
+                let (config, mut opts) = hickory_resolver::system_conf::read_system_conf().expect("resolv.conf");
                 opts.ndots = 5;
                 let resolver = TokioAsyncResolver::tokio(config, opts);
                 let mut connector = HttpConnector::new_with_resolver(HickoryResolver(resolver));
@@ -86,7 +90,7 @@ fn main() {
                     .build::<_, Empty<Bytes>>(connector));
 
                 let mut conn_handles = vec![];
-                for t_idx in 0..tasks_on_this_thread {
+                for _ in 0..tasks_on_this_thread {
                     let b = Arc::clone(&b);
                     let c = c.clone();
                     let client = Arc::clone(&client);
@@ -95,13 +99,7 @@ fn main() {
                         let url: hyper::Uri = "http://rust-server.himanshumps-1-dev.svc.cluster.local:8080/".parse().unwrap();
                         let mut count = 0u64;
 
-                        // Debugging the Barrier
-                        println!("[Task] Core {:?} Task {} waiting at barrier...", cid, t_idx);
                         b.wait().await;
-
-                        if count == 0 && cid.id == 0 {
-                            println!("[Task] Barrier released! Starting request loop...");
-                        }
 
                         while c.now() - start_time < duration {
                             let req = Request::builder()
@@ -110,20 +108,12 @@ fn main() {
                                 .body(Empty::<Bytes>::new())
                                 .unwrap();
 
-                            match client.request(req).await {
-                                Ok(resp) => {
-                                    let mut body = resp.into_body();
-                                    while let Some(Ok(frame)) = body.frame().await {
-                                        std::mem::drop(frame);
-                                    }
-                                    count += 1;
+                            if let Ok(resp) = client.request(req).await {
+                                let mut body = resp.into_body();
+                                while let Some(Ok(frame)) = body.frame().await {
+                                    std::mem::drop(frame);
                                 }
-                                Err(e) => {
-                                    // Only print error once to avoid flooding
-                                    if count == 0 {
-                                        println!("[Error] Request failed: {:?}", e);
-                                    }
-                                }
+                                count += 1;
                             }
                         }
                         count
@@ -136,12 +126,11 @@ fn main() {
         }));
     }
 
-    println!("[Main] All threads spawned. Waiting for benchmark to complete (120s)...");
+    println!("[Main] Benchmark running for 120s...");
     let total_requests: u64 = thread_handles.into_iter().map(|h| h.join().unwrap()).sum();
     let total_elapsed = clock.now() - start_time;
 
     println!("\n--- Benchmark Results ---");
     println!("Total Requests: {}", total_requests);
-    println!("Actual Duration: {:.2?}", total_elapsed);
     println!("Requests/sec:   {:.2}", total_requests as f64 / total_elapsed.as_secs_f64());
 }
