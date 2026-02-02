@@ -16,7 +16,8 @@ env:
 
 jobs:
   build:
-
+    env:
+      BUILDKIT_PROGRESS: "plain"
     runs-on: ubuntu-latest
     permissions:
       contents: read
