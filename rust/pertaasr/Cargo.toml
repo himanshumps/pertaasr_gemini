@@ -12,7 +12,10 @@ bytes = { version = "1.11.0", features = ["default", "extra-platforms"] }
 quanta = { version = "0.12.6", features = ["default"] }
 tikv-jemallocator = { version = "0.6.1", features = ["override_allocator_on_supported_platforms", "unprefixed_malloc_on_supported_platforms"] }
 tokio-util = { version = "0.7.18", features = ["full"] }
+hdrhistogram = "7.5.4"
+
 [profile.release]
 opt-level = 3
 lto = "fat"
 codegen-units = 1
+panic = "abort" 

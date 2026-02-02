@@ -97,6 +97,10 @@ We will be running multiple runs to see the performance. Let's create a table wi
 
 ```bash
 oc project himanshumps-1-dev
+oc delete is pertaasr
+oc create is pertaasr
+oc apply -f pertaasr_build.yaml
+oc start-build pertaasr --follow
 oc delete job pertaasr-job
 oc apply -f pertaasr.yaml
 ```

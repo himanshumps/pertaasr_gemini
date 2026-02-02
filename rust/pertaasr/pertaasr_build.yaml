@@ -1,0 +1,21 @@
+apiVersion: build.openshift.io/v1
+kind: BuildConfig
+metadata:
+  name: pertaasr
+  labels:
+    app: pertaasr
+spec:
+  source:
+    type: Git
+    git:
+      uri: https://github.com/himanshumps/pertaasr_gemini.git
+      ref: "fastest"
+    contextDir: rust/pertaasr/
+  strategy:
+    type: Docker
+    dockerStrategy:
+      dockerfilePath: Dockerfile
+  output:
+    to:
+      kind: ImageStreamTag
+      name: 'pertaasr:latest'
