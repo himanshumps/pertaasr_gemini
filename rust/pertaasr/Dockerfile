@@ -10,8 +10,8 @@ ENV LD_PRELOAD=/usr/lib/x86_64-linux-gnu/libjemalloc.so
 ENV JEMALLOC_OVERRIDE=/usr/lib/x86_64-linux-gnu/libjemalloc.so
 ENV LANG='en_US.UTF-8'
 ENV RUST_BACKTRACE=1
-COPY Cargo.toml ./
-COPY ./src ./src
+COPY --chown=1001:1001 --chmod=0777 Cargo.toml ./
+COPY --chown=1001:1001 --chmod=0777 ./src ./src
 RUN RUSTFLAGS="-C target-cpu=native" cargo build --release
 
 FROM rust:1-trixie
