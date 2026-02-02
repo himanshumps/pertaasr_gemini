@@ -23,13 +23,14 @@ macro_rules! diag {
 }
 
 fn main() {
-    diag!("[1/5] Initialising Maximum-Throughput Benchmark...");
+
 
     // Respect OpenShift quotas: 2 cores = 2 threads
     let num_threads = std::thread::available_parallelism()
         .map(|n| n.get())
         .unwrap_or(1);
 
+    diag!("[1/5] Initialising Maximum-Throughput Benchmark with os threads: {}...", num_threads);
     let total_conns = 20;
     let barrier = Arc::new(Barrier::new(total_conns));
     let token = CancellationToken::new();
@@ -126,7 +127,7 @@ fn main() {
     diag!("[2/5] Warmup complete. Starting 120s blast...");
     let start_time = clock.now();
 
-    std::thread::sleep(Duration::from_secs(120));
+    std::thread::sleep(Duration::from_secs(300));
     token.cancel();
 
     let total_requests: u64 = thread_handles.into_iter().map(|h| h.join().unwrap()).sum();
