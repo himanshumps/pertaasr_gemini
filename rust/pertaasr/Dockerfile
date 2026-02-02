@@ -1,6 +1,6 @@
 FROM registry.access.redhat.com/ubi10/ubi:latest
 USER root
-RUN yu install -y rust-toolset 
+RUN yum install -y rust-toolset 
 RUN mkdir -p /usr/src/app && chown 1001:0 /usr/src/app && chmod -R 777 /usr/src/app
 USER 1001
 WORKDIR /usr/src/app
