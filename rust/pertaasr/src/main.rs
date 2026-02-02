@@ -13,12 +13,6 @@ use tokio::net::TcpStream;
 use tokio::sync::Barrier;
 use tokio_util::sync::CancellationToken;
 
-#[cfg(not(target_env = "msvc"))]
-use tikv_jemallocator::Jemalloc;
-
-#[cfg(not(target_env = "msvc"))]
-#[global_allocator]
-static GLOBAL: Jemalloc = Jemalloc;
 
 macro_rules! diag {
     ($($arg:tt)*) => {{
