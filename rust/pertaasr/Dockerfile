@@ -21,6 +21,4 @@ COPY --chown=1001:1001 --chmod=0777 ./src ./src
 RUN cargo build --release
 ENV LD_PRELOAD="/usr/lib64/libjemalloc.so.2"
 ENV JEMALLOC_OVERRIDE="/usr/lib64/libjemalloc.so.2"
-RUN ls -altr /usr/lib64/libjemalloc*.*
-RUN ls -altr /usr/lib/x86_64-linux-gnu/libjemalloc*.*
 CMD "./target/release/pertaasr"
