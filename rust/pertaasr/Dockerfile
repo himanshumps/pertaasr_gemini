@@ -5,7 +5,7 @@ RUN dnf install -y https://dl.fedoraproject.org/pub/epel/epel-release-latest-10.
     dnf clean all
 
 # 2. Install jemalloc from the newly enabled EPEL repository
-RUN dnf install -y jemalloc && \
+RUN dnf install -y jemalloc jemalloc-devel && \
     dnf clean all
 
 # 3. Configure the environment to use jemalloc as the default allocator
