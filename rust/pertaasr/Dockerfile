@@ -1,24 +1,31 @@
-FROM registry.access.redhat.com/ubi10/ubi:latest
+FROM rust:1-trixie as builder
 USER root
-RUN yum install -y rust-toolset 
-RUN dnf install -y https://dl.fedoraproject.org/pub/epel/epel-release-latest-10.noarch.rpm && \
-    dnf clean all
-# 2. Install jemalloc from the newly enabled EPEL repository
-RUN dnf install -y jemalloc jemalloc-devel && \
-    dnf clean all
-
-# 3. Configure the environment to use jemalloc as the default allocator
-# The library is typically located at /usr/lib64/libjemalloc.so.2 on RHEL-based systems
-RUN mkdir -p /usr/src/app && chown 1001:0 /usr/src/app && chmod -R 777 /usr/src/app
+RUN apt-get update && apt-get install -y libjemalloc2 libjemalloc-dev  --no-install-recommends && \
+    rm -rf /var/lib/apt/lists/*
 USER 1001
 WORKDIR /usr/src/app
 USER 1001
 ENV HOME=/usr/src/app
+ENV LD_PRELOAD=/usr/lib/x86_64-linux-gnu/libjemalloc.so
+ENV JEMALLOC_OVERRIDE=/usr/lib/x86_64-linux-gnu/libjemalloc.so
 ENV LANG='en_US.UTF-8'
 ENV RUST_BACKTRACE=1
-COPY --chown=1001:1001 --chmod=0777 Cargo.toml ./
-COPY --chown=1001:1001 --chmod=0777 ./src ./src
+COPY Cargo.toml ./
+COPY ./src ./src
 RUN cargo build --release
-ENV LD_PRELOAD="/usr/lib64/libjemalloc.so.2"
-ENV JEMALLOC_OVERRIDE="/usr/lib64/libjemalloc.so.2"
+
+FROM rust:1-trixie
+USER root
+RUN apt-get update && apt-get install -y libjemalloc2 libjemalloc-dev  --no-install-recommends && \
+    rm -rf /var/lib/apt/lists/*
+USER 1001
+WORKDIR /usr/src/app
+USER 1001
+ENV HOME=/usr/src/app
+ENV LD_PRELOAD=/usr/lib/x86_64-linux-gnu/libjemalloc.so
+ENV JEMALLOC_OVERRIDE=/usr/lib/x86_64-linux-gnu/libjemalloc.so
+ENV LANG='en_US.UTF-8'
+ENV RUST_BACKTRACE=1
+USER 1001
+COPY --chown=1001:1001 --chmod=0777 --from=builder /usr/src/app/target/release /usr/src/app/target/release
 CMD "./target/release/pertaasr"
