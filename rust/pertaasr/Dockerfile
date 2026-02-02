@@ -1,7 +1,4 @@
 FROM rust:1-trixie as builder
-USER root
-RUN apt-get update && apt-get install -y libjemalloc2 libjemalloc-dev  --no-install-recommends && \
-    rm -rf /var/lib/apt/lists/*
 USER 1001
 WORKDIR /usr/src/app
 USER 1001
@@ -15,9 +12,6 @@ COPY ./src ./src
 RUN cargo build --release
 
 FROM rust:1-trixie
-USER root
-RUN apt-get update && apt-get install -y libjemalloc2 libjemalloc-dev  --no-install-recommends && \
-    rm -rf /var/lib/apt/lists/*
 USER 1001
 WORKDIR /usr/src/app
 USER 1001
