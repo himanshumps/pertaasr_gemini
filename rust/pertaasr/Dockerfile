@@ -1,6 +1,6 @@
-FROM registry.access.redhat.com/ubi9/ubi:latest
+FROM registry.access.redhat.com/ubi10/ubi:latest
 USER root
-RUN microdnf install -y rust-toolset 
+RUN yu install -y rust-toolset 
 RUN mkdir -p /usr/src/app && chown 1001:0 /usr/src/app && chmod -R 777 /usr/src/app
 USER 1001
 WORKDIR /usr/src/app
