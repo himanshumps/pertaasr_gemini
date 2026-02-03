@@ -137,10 +137,7 @@ fn main() {
                                     Ok(0) | Err(_) => break,
                                     Ok(_) => {
                                         // Record latency in nanoseconds
-                                        batch_metrics.timer_record(
-                                            "request_latency",
-                                            (c_inner.now() - start).as_nanos() as u64,
-                                        );
+                                        metrics().timer("request_latency").record_ns((c_inner.now() - start).as_nanos() as u64);
                                     }
                                 }
                             }
