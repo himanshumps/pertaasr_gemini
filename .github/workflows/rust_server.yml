@@ -68,7 +68,7 @@ jobs:
         uses: docker/build-push-action@0565240e2d4ab88bba5387d719585280857ece09 # v5.0.0
         with:
           platforms: linux/amd64,linux/arm64
-          file: "./rust_hello_world_server/Dockerfile.rust_server"
+          file: "./rust_hello_world_server/Dockerfile"
           context: "./rust_hello_world_server"
           push: ${{ github.event_name != 'pull_request' }}
           tags: ${{ env.REGISTRY }}/${{ github.actor }}/${{ env.IMAGE_NAME }}:latest
