@@ -1,29 +1,18 @@
-// Required dependencies in Cargo.toml:
-// core_affinity = "0.8"
-// tokio = { version = "1", features = ["rt", "net", "sync", "macros", "io-util"] }
-// http = "1.1"
-// bytes = "1.7"
-// hdrhistogram = "7.5"
-// quanta = "0.12"
-// tokio-util = { version = "0.7", features = ["sync"] }
-// tikv-jemallocator = "0.6"
-
 mod utils;
 
-use bytes::{Bytes};
-use hdrhistogram::Histogram;
+use bytes::Bytes;
 use http_body_util::Full;
 use http_wire::WireEncodeAsync;
+use metrics_lib::{AsyncMetricBatch, init, metrics};
 use quanta::Clock;
 use std::env;
-use std::io::{self, ErrorKind, Write};
+use std::io::{self, Write};
 use std::sync::Arc;
 use std::time::Duration;
 use tokio::io::{AsyncReadExt, AsyncWriteExt};
 use tokio::net::TcpStream;
 use tokio::sync::Barrier;
 use tokio_util::sync::CancellationToken;
-use metrics_lib::{init, metrics, AsyncMetricBatch};
 
 #[cfg(not(target_env = "msvc"))]
 #[global_allocator]
@@ -35,10 +24,12 @@ macro_rules! diag {
 
 fn main() {
     init();
-    let timer_metric = metrics().timer("request_latency");
     let args: Vec<String> = env::args().collect();
     if args.len() < 4 {
-        eprintln!("Usage: {} <host:port> <duration_secs> <connections>", args[0]);
+        eprintln!(
+            "Usage: {} <host:port> <duration_secs> <connections>",
+            args[0]
+        );
         std::process::exit(1);
     }
 
@@ -49,13 +40,21 @@ fn main() {
     let core_ids = core_affinity::get_core_ids().expect("Failed to get core IDs");
     let num_threads = core_ids.len();
 
-    println!("[INIT] Using {} logical cores via core_affinity.", num_threads);
+    println!(
+        "[INIT] Using {} logical cores via core_affinity.",
+        num_threads
+    );
 
     let barrier = Arc::new(Barrier::new(total_connections));
     let token = CancellationToken::new();
     let clock = Clock::new();
 
-    diag!("[1/4] Starting {} OS threads for {} connections for a duration of {}s...\n", num_threads, total_connections, duration_secs);
+    diag!(
+        "[1/4] Starting {} OS threads for {} connections for a duration of {}s...\n",
+        num_threads,
+        total_connections,
+        duration_secs
+    );
 
     let mut thread_handles = vec![];
     let mut tasks_spawned = 0;
@@ -90,7 +89,7 @@ fn main() {
                 let raw_req_base = http::Request::builder()
                     .method("GET")
                     .uri(format!("http://{}/", addr.clone()))
-                    //.header("host", host)
+                    .header("host", host)
                     .header("connection", "keep-alive")
                     .body(Full::new(Bytes::from("")))
                     .unwrap()
@@ -104,16 +103,16 @@ fn main() {
                     let addr_inner = Arc::clone(&addr);
                     let c_inner = c_thread.clone();
                     let raw_req = raw_req_base.clone();
-                    let timer_metric = metrics().timer("request_latency");
+                    //let timer_metric = metrics().timer("request_latency");
 
                     tasks.push(tokio::spawn(async move {
                         // Nanosecond precision for the histogram
                         //let mut hist = Histogram::<u64>::new_with_bounds(1, 10_000_000_000, 3).unwrap();
 
-
-
                         // Raw TCP Stream bypasses Hyper framework overhead
-                        let mut stream = TcpStream::connect(&*addr_inner).await.expect("Connect failed");
+                        let mut stream = TcpStream::connect(&*addr_inner)
+                            .await
+                            .expect("Connect failed");
                         stream.set_nodelay(true).ok();
 
                         let mut read_buf = [0u8; 1024]; // Buffer to drain the response
@@ -125,47 +124,34 @@ fn main() {
                             if t_inner.is_cancelled() {
                                 break;
                             }
-                            let mut batch = AsyncMetricBatch::new();
-                            // Batching requests to reduce cancellation-check frequency
+                            let mut batch_metrics = AsyncMetricBatch::new();
                             for _ in 0..128 {
+                                // Larger batch
                                 let start = c_inner.now();
-                                //let timer = timer_metric.start();
-                                // Write raw pre-serialized bytes
-                                let res: io::Result<()> = async {
-                                    stream.write_all(&raw_req).await?;
 
-                                    // DRAIN: Tight loop using try_read
-                                    loop {
-                                        stream.readable().await?;
-                                        match stream.try_read(&mut read_buf) {
-                                            Ok(0) => return Err(io::Error::new(ErrorKind::ConnectionAborted, "EOF")),
-                                            Ok(n) => {
-                                                // Heuristic: If we read a small amount, we likely caught the whole response
-                                                if n < read_buf.len() { break; }
-                                            }
-                                            Err(ref e) if e.kind() == ErrorKind::WouldBlock => continue,
-                                            Err(e) => return Err(e),
-                                        }
+                                // 1. ATTEMPT SYSCALL DIRECTLY
+                                if let Err(_) = stream.try_write(&raw_req) {
+                                    stream.write_all(&raw_req).await.ok();
+                                }
+                                match stream.read(&mut read_buf).await {
+                                    Ok(0) | Err(_) => break,
+                                    Ok(_) => {
+                                        // Record latency in nanoseconds
+                                        batch_metrics.timer_record(
+                                            "request_latency",
+                                            (c_inner.now() - start).as_nanos() as u64,
+                                        );
                                     }
-                                    Ok(())
-                                }.await;
-                                if res.is_ok() {
-                                    batch.timer_record("request_latency", (c_inner.now() - start).as_nanos() as u64);
-                                } else {
-                                    break;
                                 }
                             }
-                            batch.flush(metrics());
+                            batch_metrics.flush(metrics());
                         }
                         //hist
                     }));
                 }
 
-                let mut thread_hist = Histogram::<u64>::new_with_bounds(1, 10_000_000_000, 3).unwrap();
                 for h in tasks {
-                    if let Ok(lh) = h.await {
-                        //thread_hist.add(lh).unwrap();
-                    }
+                    if let Ok(_lh) = h.await {}
                 }
                 //thread_hist
             })
@@ -187,7 +173,16 @@ fn main() {
 
     println!("\n[RESULTS]");
     println!("Total requests:  {}", total_reqs);
-    println!("Throughput:      {:.2} req/sec", total_reqs as f64 / total_elapsed.as_secs_f64());
-    println!("Latency P50:     {:.2} µs", metrics().timer("request_latency").average().as_micros());
-    println!("Latency Max:     {:.2} µs", metrics().timer("request_latency").max().as_micros());
+    println!(
+        "Throughput:      {:.2} req/sec",
+        total_reqs as f64 / total_elapsed.as_secs_f64()
+    );
+    println!(
+        "Latency P50:     {:.2} µs",
+        metrics().timer("request_latency").average().as_micros()
+    );
+    println!(
+        "Latency Max:     {:.2} µs",
+        metrics().timer("request_latency").max().as_micros()
+    );
 }
