@@ -3,7 +3,7 @@ FROM rust:1-slim-bookworm AS builder
 WORKDIR /usr/src/app
 
 # Only copy what is needed for dependency resolution first to leverage caching
-COPY Cargo.toml Cargo.lock ./
+COPY Cargo.toml ./
 # Pre-build dependencies with a dummy file
 RUN mkdir src && echo "fn main() {}" > src/main.rs && cargo build --release
 
