@@ -19,6 +19,8 @@ The idea behind this benchmarking tool is to provide developers use Java, custom
 
 The setup:
 1. An actix rust application (basically a hello world application)
-2. Docker image with latest wrk code on debian compiled as linux/amd64
+2. Docker image with [latest wrk code](https://github.com/wg/wrk.git) on debian compiled as linux/arm64 (the linux/amd64 image is created as well)
 3. plow image from ghcr.io/six-ddc/plow
-4. pertaas image built using linux/arm64
+4. pertaas image built using linux/arm64  (the linux/amd64 image is created as well)
+
+
