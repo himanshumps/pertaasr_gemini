@@ -86,23 +86,23 @@ fn main() {
             rt.block_on(async move {
                 let host = addr.split(':').next().unwrap_or("localhost");
                 // Pre-serialize the request bytes once per thread to avoid allocation in the loop
-                let raw_req_base = http::Request::builder()
-                    .method("GET")
-                    .uri(format!("http://{}/", addr.clone()))
-                    .header("host", host)
-                    .header("connection", "keep-alive")
-                    .body(Full::new(Bytes::from("")))
-                    .unwrap()
-                    .encode_async()
-                    .await
-                    .unwrap(); // This is now a 'Bytes' object
+                 // This is now a 'Bytes' object
                 let mut tasks = vec![];
                 for _ in 0..tasks_on_thread {
                     let b_inner = Arc::clone(&b);
                     let t_inner = t.clone();
                     let addr_inner = Arc::clone(&addr);
                     let c_inner = c_thread.clone();
-                    let raw_req = raw_req_base.clone();
+                    let raw_req = http::Request::builder()
+                        .method("GET")
+                        .uri(format!("http://{}/", addr.clone()))
+                        .header("host", host)
+                        .header("connection", "keep-alive")
+                        .body(Full::new(Bytes::from("")))
+                        .unwrap()
+                        .encode_async()
+                        .await
+                        .unwrap();;
                     //let timer_metric = metrics().timer("request_latency");
 
                     tasks.push(tokio::spawn(async move {

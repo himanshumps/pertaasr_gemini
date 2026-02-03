@@ -32,16 +32,28 @@ Docker commands ran to test:
 ```bash
 # wrk test
 docker network create test-network
-docker run --platform=linux/arm64  --cpuset-cpus="7,8" --memory="4g" --cpus="2" -d --name rust-server --network test-network rust-hello-rest
+docker pull ghcr.io/himanshumps/rust-server-arm64
+docker run --platform=linux/arm64  --cpuset-cpus="6,7" --memory="4g" -d --name rust-server --network test-network ghcr.io/himanshumps/rust-server-arm64
 sleep 10
-printf ""\n\n\n\n\nRunning wrk test\n\n"
-docker run --platform=linux/arm64  --cpuset-cpus="9,10" --memory="4g" --cpus="2" --rm --name wrk_client --network test-network wrk_binary -c40 -d2m http://rust-server:8080/
+docker pull --platform=linux/arm64 ghcr.io/himanshumps/wrk-arm64
+printf "\n\n\n\n\nRunning wrk test\n\n"
+docker run --platform=linux/arm64  --cpuset-cpus="8,9" --memory="4g" --rm --name wrk_client --network test-network ghcr.io/himanshumps/wrk-arm64 -c40 -d2m http://rust-server:8080/
 # plow test
+docker stop $(docker ps -a -q --filter "network=test-network")
+docker rm $(docker ps -a -q --filter "network=test-network")
+docker run --platform=linux/arm64  --cpuset-cpus="6,7" --memory="4g" -d --name rust-server --network test-network ghcr.io/himanshumps/rust-server-arm64
+sleep 10
 printf "\n\n\n\n\nRunning plow test\n\n"
-docker run --platform=linux/arm64 --cpuset-cpus="9,10" --memory="4g" --cpus="2" --rm --name plow_client --network test-network ghcr.io/six-ddc/plow http://rust-server:8080/ -c40 -d2m --interval=0 --summary
+docker pull --platform=linux/amd64 ghcr.io/six-ddc/plow
+docker run --platform=linux/amd64 --cpuset-cpus="8,9" --memory="4g" --rm --name plow_client --network test-network ghcr.io/six-ddc/plow http://rust-server:8080/ -c40 -d2m --interval=0 --summary
 # pertaasr test
+docker stop $(docker ps -a -q --filter "network=test-network")
+docker rm $(docker ps -a -q --filter "network=test-network")
+docker run --platform=linux/arm64  --cpuset-cpus="6,7" --memory="4g" -d --name rust-server --network test-network ghcr.io/himanshumps/rust-server-arm64
+sleep 10
+docker pull --platform=linux/arm64 ghcr.io/himanshumps/pertaasr-arm64
 printf "\n\n\n\n\nRunning pertaasr test\n\n"
-docker run --platform=linux/arm64 --cpuset-cpus="9,10" --memory="4g"  --cpus="2" --rm --name pertaasr_client --network test-network pertaasr rust-server:8080 120 40
+docker run --platform=linux/arm64 --cpuset-cpus="8,9" --cpu-period=100000 --cpu-quota=-1 --memory="4g" --rm --name pertaasr_client --network test-network ghcr.io/himanshumps/pertaasr-arm64 rust-server:8080 120 40
 # Network clean up
 docker ps -a --filter "network=test-network"
 docker stop $(docker ps -a -q --filter "network=test-network")
@@ -51,13 +63,15 @@ docker network rm test-network
 
 
 
-Benchmark results for a duration of 2 min:
+Benchmark results for a duration of 2 min
+
 Run 1:
-| Application | Total requests executed | RPS |
-|-------------|-------------------------|-----|
-| wrk         |                         |     |
-| plow        |                         |     |
-| pertaasr    |                         |     |
+
+| Application | Total requests  | Requests/sec |
+|-------------|-----------------|--------------|
+| wrk         | 39169581        | 326344.57    |
+| plow        | 25376378        | 211468.152   |
+| pertaasr    | 38986240        | 324847.39    |
 
 
 
