@@ -22,5 +22,19 @@ The setup:
 2. Docker image with [latest wrk code](https://github.com/wg/wrk.git) on debian compiled as linux/arm64 (the linux/amd64 image is created as well)
 3. plow image from ghcr.io/six-ddc/plow
 4. pertaas image built using linux/arm64  (the linux/amd64 image is created as well)
+Infrastructure Details:
+Mac M1 Pro
+- Performance (P) cores 7,8 assigned to rust application
+- Performance (P) cores 9,10 assigned to run wrk, plow and pertaasr benchmarks
+
+Benchmark results for a duration of 2 min:
+Run 1:
+| Application | Total requests executed | RPS |
+|-------------|-------------------------|-----|
+| wrk         |                         |     |
+| plow        |                         |     |
+| pertaasr    |                         |     |
+
+
 
 
