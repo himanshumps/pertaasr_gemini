@@ -1,4 +1,4 @@
-FROM rust:1-slim-bookworm AS builder
+FROM rust:1-bookworm AS builder
 RUN useradd -m -u 1001 appuser
 USER 1001
 WORKDIR /usr/src/app
@@ -10,7 +10,7 @@ COPY --chown=1001:1001 --chmod=0777 Cargo.toml ./
 COPY --chown=1001:1001 --chmod=0777 ./src ./src
 RUN cargo build --release
 
-FROM debian:bookworm-slim
+FROM debian:bookworm
 RUN useradd -m -u 1001 appuser
 USER 1001
 WORKDIR /usr/src/app
