@@ -4,15 +4,38 @@ version = "0.1.0"
 edition = "2024"
 
 [dependencies]
-tokio = { version = "1.49.0", features = ["full"] }
-hyper = { version = "1.8.1", features = ["full"] }
-hyper-util = { version = "0.1.19", features = ["full"] }
-http-body-util = { version = "0.1.3", features = ["full"] }
-bytes = { version = "1.11.0", features = ["default", "extra-platforms"] }
-quanta = { version = "0.12.6", features = ["default"] }
-tikv-jemallocator = { version = "0.6.1", features = ["override_allocator_on_supported_platforms", "unprefixed_malloc_on_supported_platforms"] }
-tokio-util = { version = "0.7.18", features = ["full"] }
+# core_affinity is used for CPU pinning
+core_affinity = "0.8.3"
+
+# Minimal Tokio: rt (for runtime), net (for TcpStream), sync (for Barrier), macros (if using #[tokio::main])
+# We use rt instead of rt-multi-thread since you use Builder::new_current_thread()
+tokio = { version = "1.49.0", features = ["rt", "net", "sync", "macros", "io-util"] }
+
+# Hyper v1: http1 (for client connections) and client (for Request/Response)
+#hyper = { version = "1.8.1", features = ["http1", "client"] }
+
+# Hyper-util: tokio (bridges hyper to tokio runtime)
+#hyper-util = { version = "0.1.20", features = ["tokio"] }
+
+# Http-body-util: Required for Empty body type and BodyExt trait
+http-body-util = "0.1.3"
+
+# Tokio-util: Required for CancellationToken
+tokio-util = { version = "0.7.18", features = ["slab"] }
+
+# Standard dependencies with minimal or default features
+bytes = "1.11.0"
+quanta = "0.12.6"
 hdrhistogram = "7.5.4"
+http = "1.4.0"
+tikv-jemallocator = "0.6.1"
+http_wire = "0.5.1"
+metrics = "0.24.3"
+metrics-lib = "0.9.0"
+
+# Tikv-jemallocator: Features for memory management on supported platforms
+#tikv-jemallocator = { version = "0.6", features = ["unprefixed_malloc_on_supported_platforms"] }
+#j4rs = "0.24.0"
 
 [profile.release]
 opt-level = 3
