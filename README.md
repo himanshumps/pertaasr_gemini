@@ -27,6 +27,30 @@ Mac M1 Pro
 - Performance (P) cores 7,8 assigned to rust application
 - Performance (P) cores 9,10 assigned to run wrk, plow and pertaasr benchmarks
 
+Docker commands ran to test:
+
+```bash
+# wrk test
+docker network create test-network
+docker run --platform=linux/amd64  --cpuset-cpus="7,8" --memory="4g" --cpus="2" -d --name rust-server --network test-network rust-hello-rest
+sleep 10
+printf ""\n\n\n\n\nRunning wrk test\n\n"
+docker run --platform=linux/amd64  --cpuset-cpus="9,10" --memory="4g" --cpus="2" --rm --name wrk_client --network test-network wrk_binary -c40 -d2m http://rust-server:8080/
+# plow test
+printf "\n\n\n\n\nRunning plow test\n\n"
+docker run --cpuset-cpus="9,10" --memory="4g" --cpus="2" --rm --name plow_client --network test-network ghcr.io/six-ddc/plow http://rust-server:8080/ -c40 -d2m --interval=0 --summary
+# pertaasr test
+printf "\n\n\n\n\nRunning pertaasr test\n\n"
+docker run --platform=linux/amd64 --cpuset-cpus="9,10" --memory="4g"  --cpus="2" --rm --name pertaasr_client --network test-network pertaasr rust-server:8080 120 40
+# Network clean up
+docker ps -a --filter "network=test-network"
+docker stop $(docker ps -a -q --filter "network=test-network")
+docker rm $(docker ps -a -q --filter "network=test-network")
+docker network rm test-network
+```
+
+
+
 Benchmark results for a duration of 2 min:
 Run 1:
 | Application | Total requests executed | RPS |
