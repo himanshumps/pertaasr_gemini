@@ -73,6 +73,26 @@ Run 1:
 | plow        | 25376378        | 211468.152   |
 | pertaasr    | 38986240        | 324847.39    |
 
+Percentage difference: 0.47%
 
+Run 2:
+
+| Application | Total requests  | Requests/sec |
+|-------------|-----------------|--------------|
+| wrk         | 40678785        | 338957.99    |
+| plow        | 25081438        | 209010.137   |
+| pertaasr    | 38970880        | 324712.30    |
+
+Percentage difference: 4.29%
+
+Run 3:
+
+| Application | Total requests  | Requests/sec |
+|-------------|-----------------|--------------|
+| wrk         | 40733520        | 339405.44    |
+| plow        | 24672274        | 205601.286   |
+| pertaasr    | 40087040        | 334013.65    |
+
+Percentage difference: 1.60%
 
 
