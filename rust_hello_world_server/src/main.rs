@@ -5,7 +5,7 @@ use tokio::time::sleep;
 #[get("/")]
 async fn index() -> impl Responder {
     // Introduce a 100 microsecond delay
-    sleep(Duration::from_micros(100)).await;
+    sleep(Duration::from_micros(10)).await;
     
     "Hello world!"
 }
