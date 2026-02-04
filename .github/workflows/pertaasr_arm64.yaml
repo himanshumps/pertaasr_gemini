@@ -13,7 +13,6 @@ env:
   REGISTRY: ghcr.io
   # github.repository as <account>/<repo>
   IMAGE_NAME: pertaasr-arm64
-  RUSTFLAGS: "-C target-cpu=native"
 
 jobs:
   build:
