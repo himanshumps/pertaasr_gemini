@@ -2,10 +2,12 @@ use std::time::Duration;
 use actix_web::{get, App, HttpServer, Responder};
 use actix_web::rt::time::{sleep};
 
+const DURATION: Duration = Duration::from_nanos(10);
+
 #[get("/")]
 async fn index() -> impl Responder {
     // Introduce a 100 microsecond delay
-    sleep(Duration::from_micros(1)).await;
+    sleep(DURATION).await;
     "Hello world!"
 }
 
