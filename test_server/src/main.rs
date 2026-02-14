@@ -13,12 +13,12 @@ async fn index() -> impl Responder {
 
 #[actix_web::main]
 async fn main() -> std::io::Result<()> {
-    println!("Starting server on port 8080");
+    println!("Starting server on port 8083");
     HttpServer::new(|| {
         App::new()
             .service(index)
     })
-    .bind(("0.0.0.0", 8080))?
+    .bind(("0.0.0.0", 8083))?
     .run()
     .await
 }
